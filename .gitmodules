@@ -3,7 +3,9 @@
 	url = https://github.com/simonlindholm/asm-differ
 [submodule "tools/Torch"]
 	path = tools/Torch
-	url = https://github.com/HarbourMasters/Torch
+	url = https://github.com/philosoraptor64/Torch.git
+	branch = starship-netplay
 [submodule "libultraship"]
 	path = libultraship
-	url = https://github.com/Kenix3/libultraship.git
+	url = https://github.com/philosoraptor64/libultraship.git
+	branch = starship-netplay
