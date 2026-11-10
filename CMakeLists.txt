@@ -187,6 +187,13 @@ else()
     add_executable(${PROJECT_NAME} ${ALL_FILES})
 endif()
 
+# Netplay needs bit-identical simulation on every device: no FMA contraction
+# (clang's default -ffp-contract=on fuses a*b+c differently per target/optimizer).
+option(STARSHIP_STRICT_FP "Deterministic floating point (needed for netplay)" ON)
+if(STARSHIP_STRICT_FP AND NOT MSVC)
+    target_compile_options(${PROJECT_NAME} PRIVATE -ffp-contract=off)
+endif()
+
 ################################################################################
 # MSVC runtime library
 ################################################################################
