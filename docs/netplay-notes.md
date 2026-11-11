@@ -184,3 +184,6 @@ cmake -S . -B build-iossim -G Ninja -DCMAKE_SYSTEM_NAME=iOS -DPLATFORM=SIMULATOR
   -DCMAKE_PREFIX_PATH=$HOME/Development/N64/deps-iossim/sdl2 -DBUILD_SM64=OFF
 cmake --build build-iossim --target Starship
 ```
+- **Soak (2026-11-11):** `VS=1 FRAMES=18001 LATENCY=60 JITTER=30 LOSS=3`: 10 minutes, 16678 ticks of Versus, rtt ~213
+  ms, 671 rollbacks (max depth 5), 600/600 sync checks, every final per-tick hash identical, no crash; stalls 9.2 s
+  (spikes past the 8-tick window).
