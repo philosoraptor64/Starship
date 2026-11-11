@@ -28,9 +28,27 @@ our SpaghettiKart (Mario Kart 64), BattleShip (Smash 64) and perfect_dark forks.
 - Main RNG `sRandSeed1-3` is clock-seeded in `Rand_Init` (src/engine/fox_game.c ~58): seed from the match config.
 - sinf/cosf come from the system libm (fine Mac <-> iPhone, a risk vs. PC).
 
+## Tick structure + clock reads (MacBook, 2026-11-10 night)
+- One tick = `Graphics_ThreadUpdate` (src/sys/sys_main.c): `Controller_UpdateInput()` (copies last tick's read into
+  gControllerHold/gControllerPress, dead zone) -> `Controller_ReadData()` (src/sys/sys_joybus.c: `osContGetReadData(
+  sNextController)`, unless gControllerLock) -> `Game_Update()` -> ... -> `Audio_Update()`, all on one thread.
+  Hook points: input filter right after `osContGetReadData(sNextController)`; state hash after `Game_Update()`.
+  Note the pads read at tick N are used at tick N+1 (UpdateInput runs first).
+- Clock reads that reach gameplay (must be replaced in deterministic mode):
+  1. `Rand_Init` (src/sys/sys_math.c) seeds sRandSeed1-3 from osGetTime() -> seed from the match config. (The
+     Switch/Linux "seed is 0" workaround also re-seeds from the clock; not compiled on Apple.) There is also a seeded RNG
+     (`Rand_SetSeed` -> sSeededRandSeed*), set by game code.
+  2. **Versus time limit**: `Versus_UpdateTimer` (src/engine/fox_versus.c ~299) counts gVsCountdown down by the real
+     time between draws (`sDrawTime = osGetTime()` ~1657) -> count ticks instead (1/30 s per tick) online.
+  3. Boot logo: `Timer_CreateTask(MSEC_TO_CYCLES(1000), Timer_Increment, &gGameState)` (src/engine/fox_game.c ~402)
+     leaves the logo after 1 real second (port timers run on SDL_GetTicks, src/port/Engine.cpp) -> a fixed tick count.
+- Audio only: `gAudioRandom` from osGetCount (src/audio/audio_thread.c); not read outside src/audio. Check that no game
+  code reads audio state back (perfect_dark had an AI command that did).
+- Not yet checked: the render/camera aspect feeding the simulation (it did in perfect_dark: there a fixed render
+  aspect was needed), widescreen/enhancement cvars that change gameplay.
+
 ## Next steps (small, one commit each)
 1. User plays it on the Mac (picture, sound, controller).
-2. Find the controller read (port side of osContGetReadData) and the end of a logic tick; list clock reads.
 3. Deterministic mode + replay check like perfect_dark's `port/src/replaycheck.c` (fixed seed, record/play pads,
    per-tick state hash), Versus mode boot.
 4. iOS build (LUS iOS path from SpaghettiKart/BattleShip), then the i64 module.
