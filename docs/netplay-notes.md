@@ -210,3 +210,9 @@ cmake --build build-iossim --target Starship
   MacBook: sign like perfect_dark's M7b (stub profile for io.github.philosoraptor.starship, existing certificate,
   never a new one), install, copy sf64.o2r + starship.o2r into the app's Documents, Bluetooth controller.
   Online: Documents/netplay.cfg (SF64_NET_PEER=<host>:7401 or SF64_NET_SERVER/ROOM...), log Documents/sfnet.log.
+- **Full-screen Versus HUD (2026-11-11):** `src/port/HudFullView.c`: in the full view the local pilot's Versus HUD
+  (portrait, number, boost, shield, bombs, kill stars: HUD_VS_DrawHUD) and the radar window are drawn as usual for
+  their quarter, then their 2D rectangles in the display list just emitted are moved out of the quarter and doubled
+  (positions x2, texture steps /2): the quarter's HUD zoomed to the full screen, the same layout for every player.
+  The radar marks need nothing (3D, relative to the viewport, which fills the screen). Screenshot: radar bottom-left
+  with marks inside, shield + portrait + number at the bottom, boost top-right, on both machines. IN SYNC.

@@ -1,3 +1,5 @@
+#include "port/SfNet.h"
+#include "port/HudFullView.h"
 #include "sf64math.h"
 #include "fox_hud.h"
 #include "prevent_bss_reordering.h"
@@ -2143,7 +2145,15 @@ s32 HUD_RadarMarks_Update(void) {
     }
 
     HUD_RadarMarks_Setup();
-    HUD_RadarWindow_Draw(x + gHudOffsetRect, y);
+    {
+        Gfx* radarStart = gMasterDisp;
+        HUD_RadarWindow_Draw(x + gHudOffsetRect, y);
+        // @port: online full view: the radar window zoomed like the rest of the quarter HUD (its marks are drawn
+        // relative to the viewport, which already fills the screen)
+        if (gVersusMode && SfNet_FullView(gCamCount)) {
+            HudFullView_Transform(radarStart, gMasterDisp, gPlayerNum);
+        }
+    }
 
     if (!gVersusMode &&
         ((gCurrentLevel == LEVEL_SECTOR_Z) || (gCurrentLevel == LEVEL_FORTUNA) || (gCurrentLevel == LEVEL_VENOM_2) ||
@@ -3334,7 +3344,12 @@ void HUD_DrawCountdown(s32* countdown, f32 scale) {
 // LTODO: Align these
 void HUD_Radar(void) {
     if (gVersusMode) {
+        Gfx* hudStart = gMasterDisp;
         HUD_VS_DrawHUD();
+        // @port: online full view: this player's quarter HUD zoomed to the full screen
+        if (SfNet_FullView(gCamCount)) {
+            HudFullView_Transform(hudStart, gMasterDisp, gPlayerNum);
+        }
     }
     HUD_RadarMarks_Update();
 }
