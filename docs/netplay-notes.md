@@ -53,8 +53,17 @@ Rand_Init seeds from `SF64_SEED` (default 1), Versus_UpdateTimer advances 100/30
 waits 30 ticks (ReplayCheck_EndTick, called after Game_Update in Graphics_ThreadUpdate) instead of the 1 s timer task.
 Verified only that it builds and boots to the title. NOT yet: input record/play, state hash, a replay comparison.
 
+## User test on the Mac (2026-11-10 night)
+- "Everything works." Launcher: `~/Developer/N64/Play Star Fox.command` (local, not in git: `cd build-cmake && ./Starship`;
+  double-clicking build-cmake/Starship in Finder starts in ~ and asks for a ROM because it can't find sf64.o2r).
+- Xbox controller: C buttons were only on the right stick / triggers / B / Y; the user wanted them on the D-pad. Done in the
+  user's local config only (build-cmake/starship.cfg.json, backup .bak-before-dpad): SDL buttons 11-14 added to C-Up/Down/
+  Left/Right. TODO: make it the default mapping for Xbox-style pads (i64 module / iOS too).
+- VS mode didn't start with one controller (it needs a second plugged pad for player 2): netplay must make the remote
+  player's port read as plugged (gControllerPlugged / osContGetStatus in Controller_UpdateInput, sys_joybus.c).
+
 ## Next steps (small, one commit each)
-1. User plays it on the Mac (picture, sound, controller).
+1. (done) User plays it on the Mac.
 3b. **First test PASSED (2026-11-10 night):** 3 idle runs from boot x 600 ticks byte-identical (logo -> title at tick
    33 every time; hashes in build-cmake/replay/). NEXT: scripted/human input through the menus into a level and into
    Versus, then the iPhone build. Details: SF64_REPLAY_CHECK/RECORD/PLAY/FRAMES in ReplayCheck.c
