@@ -1,4 +1,5 @@
 #include "prevent_bss_reordering.h"
+#include "port/ReplayCheck.h"
 #include "global.h"
 #include "sf64dma.h"
 #include "assets/ast_logo.h"
@@ -399,7 +400,9 @@ void Game_Update(void) {
                     Save_Write();
                 }
                 gGameState++;
-                Timer_CreateTask(MSEC_TO_CYCLES(1000), Timer_Increment, (s32*) &gGameState, 1);
+                if (!ReplayCheck_Active()) { // deterministic mode: ReplayCheck_EndTick counts 30 ticks instead
+                    Timer_CreateTask(MSEC_TO_CYCLES(1000), Timer_Increment, (s32*) &gGameState, 1);
+                }
                 /* fallthrough */
             case GSTATE_LOGO_WAIT:
                 RCP_SetupDL(&gMasterDisp, SETUPDL_76_OPTIONAL);

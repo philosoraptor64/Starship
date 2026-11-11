@@ -1,4 +1,5 @@
 #include "sys.h"
+#include "port/ReplayCheck.h"
 #include "prevent_bss_reordering.h"
 
 s32 sSeededRandSeed3;
@@ -13,6 +14,10 @@ f32 Math_ModF(f32 value, f32 mod) {
 }
 
 void Rand_Init(void) {
+    if (ReplayCheck_Active()) { // netplay/replay: the seed comes from the match config
+        ReplayCheck_GetSeeds(&sRandSeed1, &sRandSeed2, &sRandSeed3);
+        return;
+    }
     sRandSeed1 = (s32) osGetTime() % 30000;
     sRandSeed2 = (s32) osGetTime() % 30000;
     sRandSeed3 = (s32) osGetTime() % 30000;

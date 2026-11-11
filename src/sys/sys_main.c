@@ -1,4 +1,5 @@
 #include "sys.h"
+#include "port/ReplayCheck.h"
 #include "sf64audio_external.h"
 
 #include <functions.h>
@@ -246,6 +247,7 @@ void Graphics_ThreadUpdate() {
         __gSPSegment(gUnkDisp1++, 0, 0);
         gSPDisplayList(gMasterDisp++, gGfxPool->unkDL1);
         Game_Update();
+        ReplayCheck_EndTick();
         if (gStartNMI == 1) {
             Graphics_NMIWipe();
         }

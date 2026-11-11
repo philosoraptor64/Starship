@@ -47,8 +47,18 @@ our SpaghettiKart (Mario Kart 64), BattleShip (Smash 64) and perfect_dark forks.
 - Not yet checked: the render/camera aspect feeding the simulation (it did in perfect_dark: there a fixed render
   aspect was needed), widescreen/enhancement cvars that change gameplay.
 
+## Deterministic mode (step 3a, 2026-11-10 night, MacBook)
+`src/port/ReplayCheck.{c,h}`: `SF64_DETERMINISTIC=1` (later also implied by SF64_REPLAY_CHECK/RECORD/PLAY):
+Rand_Init seeds from `SF64_SEED` (default 1), Versus_UpdateTimer advances 100/30 centiseconds per tick, the boot logo
+waits 30 ticks (ReplayCheck_EndTick, called after Game_Update in Graphics_ThreadUpdate) instead of the 1 s timer task.
+Verified only that it builds and boots to the title. NOT yet: input record/play, state hash, a replay comparison.
+
 ## Next steps (small, one commit each)
 1. User plays it on the Mac (picture, sound, controller).
-3. Deterministic mode + replay check like perfect_dark's `port/src/replaycheck.c` (fixed seed, record/play pads,
+3b. Replay check like perfect_dark's `port/src/replaycheck.c`: record/play pads right after
+   `osContGetReadData(sNextController)` in Controller_ReadData (src/sys/sys_joybus.c), per-tick hash in
+   ReplayCheck_EndTick (sRandSeed*, gGameFrameCount, gPlayer[] pos/rot/health/state, actors/bosses/items), quit after N
+   ticks; a script like perfect_dark's tools/replay/replay-test.sh. Then a Versus boot (4 players, 3 fed by a script).
+3. (old text) Deterministic mode + replay check like perfect_dark's `port/src/replaycheck.c` (fixed seed, record/play pads,
    per-tick state hash), Versus mode boot.
 4. iOS build (LUS iOS path from SpaghettiKart/BattleShip), then the i64 module.

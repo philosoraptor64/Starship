@@ -1,4 +1,5 @@
 #include "prevent_bss_reordering.h"
+#include "port/ReplayCheck.h"
 #include "global.h"
 #include "fox_option.h"
 #include "assets/ast_vs_menu.h"
@@ -298,6 +299,10 @@ void func_versus_800BDE44(void) {
 
 s32 Versus_UpdateTimer(void) {
     s32 temp = (s32) CYCLES_TO_USEC((sDrawTime - sPrevDrawTime)) / 10000;
+
+    if (ReplayCheck_Active()) { // netplay/replay: count game ticks, not real time between draws
+        temp = ReplayCheck_VsTimerCentis();
+    }
 
     gVsCountdown[2] -= temp;
     if (gVsCountdown[2] < 0) {
