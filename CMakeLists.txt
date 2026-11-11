@@ -300,7 +300,23 @@ include_directories(
   ${dr_libs_SOURCE_DIR}
 )
 
-add_subdirectory(libultraship ${CMAKE_CURRENT_SOURCE_DIR}/libultraship)
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    # @port: CMake's iOS feature checks only compile (they never link), so libzip "finds" Windows-only functions;
+    # tell it they aren't there
+    foreach(_v HAVE__CLOSE HAVE__DUP HAVE__FDOPEN HAVE__FILENO HAVE__SETMODE HAVE__STRDUP HAVE__STRTOI64
+            HAVE__STRTOUI64 HAVE__UNLINK HAVE_MEMCPY_S HAVE_SETMODE HAVE_STRERROR_S HAVE_STRERRORLEN_S HAVE_STRICMP
+            HAVE_STRNCPY_S HAVE_CLONEFILE)
+        set(${_v} 0 CACHE INTERNAL "")
+    endforeach()
+endif()
+add_subdirectory(libultraship ${CMAKE_BINARY_DIR}/libultraship) # @port: per build folder (the Mac and iOS builds overwrote each other in the source tree)
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS" AND TARGET zip)
+    # @port: libzip (fetched by libultraship on iOS) inherits this directory's include paths, and
+    # libultraship/src/config/config.h then shadows libzip's own config.h (case-insensitive file system)
+    get_target_property(_zip_inc zip INCLUDE_DIRECTORIES)
+    list(FILTER _zip_inc EXCLUDE REGEX "^${CMAKE_SOURCE_DIR}(/include|/src|/libultraship/.*)?$")
+    set_target_properties(zip PROPERTIES INCLUDE_DIRECTORIES "${_zip_inc}")
+endif()
 add_dependencies(${PROJECT_NAME} libultraship)
 target_link_libraries(${PROJECT_NAME} PRIVATE libultraship)
 
@@ -385,6 +401,27 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "CafeOS")
     target_include_directories(${PROJECT_NAME} PRIVATE
         ${DEVKITPRO}/portlibs/wiiu/include/
     )
+elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    # @port: Homebrew's Ogg/Vorbis are macOS libraries: build them for iOS (as our SpaghettiKart iOS build does)
+    include(FetchContent)
+    set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+    set(BUILD_TESTING OFF)
+    FetchContent_Declare(ogg GIT_REPOSITORY https://github.com/xiph/ogg.git GIT_TAG v1.3.5)
+    FetchContent_MakeAvailable(ogg)
+    if(NOT TARGET Ogg::ogg)
+        add_library(Ogg::ogg ALIAS ogg)
+    endif()
+    # vorbis's find_package(Ogg) (cmake/modules/FindOgg.cmake): the target above is used, these just satisfy it
+    set(OGG_INCLUDE_DIR "${ogg_SOURCE_DIR}/include;${ogg_BINARY_DIR}/include" CACHE STRING "" FORCE)
+    set(OGG_LIBRARY ogg CACHE STRING "" FORCE)
+    FetchContent_Declare(vorbis GIT_REPOSITORY https://github.com/xiph/vorbis.git GIT_TAG v1.3.7)
+    FetchContent_MakeAvailable(vorbis)
+    foreach(lib vorbis vorbisenc vorbisfile)
+        if(NOT TARGET Vorbis::${lib})
+            add_library(Vorbis::${lib} ALIAS ${lib})
+        endif()
+    endforeach()
+    set(ADDITIONAL_LIBRARY_DEPENDENCIES "Ogg::ogg" "Vorbis::vorbis" "Vorbis::vorbisenc" "Vorbis::vorbisfile")
 else()
     find_package(Ogg REQUIRED)
     find_package(Vorbis REQUIRED)

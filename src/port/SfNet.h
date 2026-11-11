@@ -11,7 +11,8 @@
  *   SF64_NET_SERVER=host:port SF64_NET_ROOM=ABCD [SF64_NET_PASSWORD, SF64_NET_RELAY=1]   room codes
  *   SF64_NET_DELAY=n (2; auto up to 6), SF64_NET_WAIT_SECS (60), SF64_NET_DROP_SECS (20: then play on offline)
  *   SF64_NET_BOT=seed (scripted local input), SF64_NET_TEST_DESYNC=tick, SF64_NET_EXTERNAL_TEST=1 (i64 stand-in)
- *   The host's SF64_SEED is the session's.
+ *   The host's SF64_SEED is the session's. On the iPhone the same KEY=VALUE lines go in Documents/netplay.cfg
+ *   (elsewhere SF64_NET_CONFIG=<file>); the log is Documents/sfnet.log there.
  * Inside i64: SfNet_SessionBlob on the session host, SfNet_InitExternal at game start, SfNet_ExternalEvent per frame.
  */
 

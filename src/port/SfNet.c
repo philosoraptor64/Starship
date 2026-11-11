@@ -18,6 +18,14 @@
 #include "n64net_input.h"
 #include "n64net_rendezvous.h"
 #include "sfnet_build_id.h"
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#endif
+#if defined(__APPLE__) && TARGET_OS_IOS
+#define SFNET_IOS 1
+#else
+#define SFNET_IOS 0
+#endif
 
 /* See SfNet.h. Lockstep (rollback window 0) through n64net_input; the whole game is shared from boot. */
 
@@ -99,15 +107,34 @@ static unsigned long long NowUsecs(void) {
     return (unsigned long long) ts.tv_sec * 1000000ull + (unsigned long long) ts.tv_nsec / 1000ull;
 }
 
+static FILE* LogFile(void) {
+#if SFNET_IOS
+    /* iOS: no console for the player; Documents/sfnet.log (Files app) */
+    static FILE* f = NULL;
+    static int tried = 0;
+    if (!tried) {
+        char path[1024];
+        tried = 1;
+        snprintf(path, sizeof(path), "%s/Documents/sfnet.log", getenv("HOME") ? getenv("HOME") : ".");
+        f = fopen(path, "w");
+    }
+    return f ? f : stderr;
+#else
+    return stderr;
+#endif
+}
+
 static void NetLog(const char* fmt, ...) {
     va_list ap;
+    FILE* out = LogFile();
     va_start(ap, fmt);
-    fprintf(stderr, "SfNet: ");
-    vfprintf(stderr, fmt, ap);
+    fprintf(out, "SfNet: ");
+    vfprintf(out, fmt, ap);
     va_end(ap);
     if (fmt[0] && fmt[strlen(fmt) - 1] != '\n') {
-        fputc('\n', stderr);
+        fputc('\n', out);
     }
+    fflush(out);
 }
 
 static void NetLogCb(const char* fmt, ...) {
@@ -526,8 +553,44 @@ static void ExternalTest(unsigned long long seed) {
     }
 }
 
+/* Settings file for machines without environment variables (iPhone: Documents/netplay.cfg; elsewhere
+ * SF64_NET_CONFIG=<file>): one KEY=VALUE per line (SF64_* keys only, '#' comments). The environment wins. */
+static void LoadConfigFile(void) {
+    char path[1024], line[512];
+    FILE* f;
+    int n = 0;
+    if (EnvStr("SF64_NET_CONFIG")) {
+        snprintf(path, sizeof(path), "%s", EnvStr("SF64_NET_CONFIG"));
+    } else if (SFNET_IOS) {
+        snprintf(path, sizeof(path), "%s/Documents/netplay.cfg", getenv("HOME") ? getenv("HOME") : ".");
+    } else {
+        return;
+    }
+    f = fopen(path, "r");
+    if (!f) {
+        return;
+    }
+    while (fgets(line, sizeof(line), f)) {
+        char* eq;
+        size_t len;
+        char* p = line;
+        while (*p == ' ' || *p == '\t') p++;
+        if (strncmp(p, "SF64_", 5) != 0 || !(eq = strchr(p, '='))) {
+            continue;
+        }
+        *eq = '\0';
+        len = strlen(eq + 1);
+        while (len && (eq[len] == '\n' || eq[len] == '\r' || eq[len] == ' ')) eq[len--] = '\0';
+        setenv(p, eq + 1, 0);
+        n++;
+    }
+    fclose(f);
+    NetLog("%d settings from %s", n, path);
+}
+
 int SfNet_Wanted(void) {
     if (sWanted < 0) {
+        LoadConfigFile();
         sWanted = EnvStr("SF64_NET_HOST") || EnvStr("SF64_NET_PEER") ||
                   (EnvStr("SF64_NET_SERVER") && EnvStr("SF64_NET_ROOM")) || EnvStr("SF64_NET_EXTERNAL_TEST");
     }

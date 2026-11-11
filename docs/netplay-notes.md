@@ -161,3 +161,26 @@ Verified only that it builds and boots to the title. NOT yet: input record/play,
 - Other Versus modes (2026-11-11): `VS=1 VS_HOST_SCRIPT=tools/net/vs-host-battle.txt` (Battle Royal) and
   `vs-host-time.txt` (Time Trial), 5400 ticks each over 30+10 ms: no crash, IN SYNC, every final hash identical
   (~4100-4200 ticks of a match each). Not yet: other stages (the stage select's default was used), 30+ minute runs.
+
+## iOS build (2026-11-11, Studio; simulator first)
+The iOS path of upstream Starship/libultraship was stale. Fixed so far:
+- `ios/plist.in` (our own: UIScene manifest for the patched SDL, landscape, controllers, Files-app Documents,
+  local network); CMake points IOS_DIR there and bundles logo.png.
+- Ogg/Vorbis built from source for iOS (FetchContent v1.3.5 / v1.3.7; vorbis's find_package(Ogg) satisfied).
+- libzip on iOS: its feature checks only compile, so Windows-only functions were "found" (memcpy_s...): the
+  results are preset to 0 in CMakeLists.txt; and libzip no longer inherits Starship's include dirs
+  (libultraship/src/config/config.h shadowed libzip's config.h).
+- libultraship (submodule): iOS spdlog v1.15.3 (1.14.1's bundled fmt fails with the current clang);
+  `PLATFORM` overridable (SIMULATORARM64 for the simulator; default OS64COMBINED).
+- **libultraship now builds into the build folder** (it built into its source folder: a Mac and an iOS build
+  overwrote each other's libraries).
+- SfNet on iOS: settings from Documents/netplay.cfg (elsewhere SF64_NET_CONFIG=<file>), log Documents/sfnet.log.
+Simulator configure (SDL = the UIScene-patched SDL built for perfect_dark's simulator build, installed to
+~/Development/N64/deps-iossim/sdl2):
+```
+cmake -S . -B build-iossim -G Ninja -DCMAKE_SYSTEM_NAME=iOS -DPLATFORM=SIMULATORARM64 -DDEPLOYMENT_TARGET=17.0 \
+  -DCMAKE_OSX_SYSROOT=iphonesimulator -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=17.0 \
+  -DCMAKE_BUILD_TYPE=Release -DSDL2_DIR=$HOME/Development/N64/deps-iossim/sdl2/lib/cmake/SDL2 \
+  -DCMAKE_PREFIX_PATH=$HOME/Development/N64/deps-iossim/sdl2 -DBUILD_SM64=OFF
+cmake --build build-iossim --target Starship
+```

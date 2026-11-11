@@ -90,6 +90,7 @@ static void Init(void) {
         return;
     }
     sInit = 1;
+    (void) SfNet_Wanted(); /* loads netplay.cfg (iPhone) before any setting is read */
     sActive = ((s = EnvStr("SF64_DETERMINISTIC")) && atoi(s)) || EnvStr("SF64_REPLAY_CHECK") ||
               EnvStr("SF64_REPLAY_RECORD") || EnvStr("SF64_REPLAY_PLAY");
     if ((s = EnvStr("SF64_SEED"))) {
