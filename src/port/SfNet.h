@@ -26,6 +26,8 @@ int SfNet_Wanted(void);
 unsigned long long SfNet_Init(unsigned long long seed);
 int SfNet_Active(void);
 int SfNet_LocalPlayer(void);
+/* online Versus (4 cameras): draw only this machine's pilot, full screen (SF64_NET_VIEW=split: classic 4-way) */
+int SfNet_FullView(int camCount);
 /* right after osContGetReadData (and the replay check): pads 1-2 = the exchanged inputs of logic tick `tick` */
 void SfNet_FilterPads(OSContPad* pads, int tick);
 /* after each logic tick, with the state hash */

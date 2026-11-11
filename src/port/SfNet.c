@@ -690,3 +690,12 @@ void SfNet_Shutdown(void) {
         }
     }
 }
+
+int SfNet_FullView(int camCount) {
+    static int split = -1;
+    if (split < 0) {
+        const char* v = EnvStr("SF64_NET_VIEW");
+        split = v && !strcmp(v, "split");
+    }
+    return camCount == 4 && sActive && !split; /* stays after a disconnect: the view doesn't jump */
+}

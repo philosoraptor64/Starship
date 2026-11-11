@@ -1,3 +1,4 @@
+#include "port/SfNet.h"
 #include "prevent_bss_reordering.h"
 #include "port/ReplayCheck.h"
 #include "global.h"
@@ -689,6 +690,10 @@ s32 func_versus_800BF59C(void) {
         RCP_SetupDL(&gMasterDisp, SETUPDL_78);
 
         if (D_80178850[i] == 0) {
+            continue;
+        }
+        // @port: online full view: only this device's own slot
+        if (SfNet_FullView(gCamCount) && (i != SfNet_LocalPlayer())) {
             continue;
         }
 

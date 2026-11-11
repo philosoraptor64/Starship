@@ -111,3 +111,12 @@ Verified only that it builds and boots to the title. NOT yet: input record/play,
 - NEXT for Star Fox: one full-screen view per device in VS (each player sees their own quarter full screen; like
   perfect_dark's full views, check what the camera/HUD do), rollback, iOS build + simulator test, i64 module.
   Why upstream disabled VS is unknown: watch for crashes in longer VS sessions (Battle Royal, Time Trial, other stages).
+- **Full view per device in online Versus (2026-11-11):** `SfNet_FullView(gCamCount)` (default online with 4
+  cameras; `SF64_NET_VIEW=split` = classic 4-way): fox_game.c draws only the local pilot (`Game_Draw(local)`) with
+  the 1-camera full-screen viewport, skips the other views/dividers, draws the local glare/damage flash full screen,
+  and sets `gPlayerNum = 1` afterwards (what drawing views 0,3,2,1 leaves on every machine: Game_Draw sets it).
+  fox_versus.c skips other slots' labels (the empty slots' "Camera"). All four pilots are still simulated on both.
+  VS pair test: IN SYNC, every per-tick hash identical (so drawing one view doesn't touch the simulation).
+  **Still quarter-sized:** the local pilot's HUD (radar box, health bar, portrait, player number, boost gauge) stays
+  at its quarter's position (P1 top-left, P2 top-right), drawn in the per-view Display/HUD code with quarter
+  coordinates. Next: a full-screen layout for those (ideally the 1-player HUD positions).

@@ -1,3 +1,4 @@
+#include "port/SfNet.h"
 #include "prevent_bss_reordering.h"
 #include "port/ReplayCheck.h"
 #include "global.h"
@@ -364,7 +365,8 @@ void Game_Update(void) {
 
     if (Game_ChangeScene() != true) {
         Lib_InitPerspective(&gUnkDisp1);
-        Game_InitViewport(&gUnkDisp1, gCamCount, 0);
+        // @port: online Versus: this device shows only its own pilot, full screen (all four are still simulated)
+        Game_InitViewport(&gUnkDisp1, SfNet_FullView(gCamCount) ? 1 : gCamCount, 0);
 
         if (gNextGameStateTimer != 0) {
             gNextGameStateTimer--;
@@ -519,9 +521,11 @@ void Game_Update(void) {
                 break;
         }
 
-        Game_Draw(0);
+        Game_Draw(SfNet_FullView(gCamCount) ? SfNet_LocalPlayer() : 0);
 
-        if (gCamCount == 2) {
+        if (SfNet_FullView(gCamCount)) {
+            gPlayerNum = 1; // what drawing views 0, 3, 2, 1 leaves behind on every machine
+        } else if (gCamCount == 2) {
             Game_InitViewport(&gMasterDisp, gCamCount, 1);
             Game_Draw(1);
             gDPPipeSync(gMasterDisp++);
@@ -579,6 +583,19 @@ void Game_Update(void) {
                 CALL_CANCELLABLE_EVENT(DrawBossHealthHUDEvent) {
                     HUD_DrawBossHealth();
                 }
+            }
+        } else if (SfNet_FullView(gCamCount)) {
+            i = SfNet_LocalPlayer();
+            if (gPlayer[i].dmgEffectTimer != 0) {
+                Graphics_FillRectangle(&gMasterDisp, OTRGetRectDimensionFromLeftEdge(0), 0,
+                                       OTRGetRectDimensionFromRightEdge(SCREEN_WIDTH - 1), SCREEN_HEIGHT - 1,
+                                       gFillScreenRed, gFillScreenGreen, gFillScreenBlue, gFillScreenAlpha);
+                partialFill = true;
+            } else {
+                Graphics_FillRectangle(&gMasterDisp, OTRGetRectDimensionFromLeftEdge(0), 0,
+                                       OTRGetRectDimensionFromRightEdge(SCREEN_WIDTH - 1), SCREEN_HEIGHT - 1,
+                                       gPlayerGlareReds[i], gPlayerGlareGreens[i], gPlayerGlareBlues[i],
+                                       gPlayerGlareAlphas[i]);
             }
         } else {
             for (i = 0; i < gCamCount; i++) {
