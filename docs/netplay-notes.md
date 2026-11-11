@@ -79,3 +79,23 @@ Verified only that it builds and boots to the title. NOT yet: input record/play,
 3. (old text) Deterministic mode + replay check like perfect_dark's `port/src/replaycheck.c` (fixed seed, record/play pads,
    per-tick state hash), Versus mode boot.
 4. iOS build (LUS iOS path from SpaghettiKart/BattleShip), then the i64 module.
+
+## Input determinism + 2-player netplay (2026-11-11, Studio)
+- **Bot determinism:** `SF64_TEST_BOT=seed` (controller 1; `SF64_TEST_BOT2..4` the others) mashes stick/fire/bombs/
+  boost/menus. Seeds 5, 9, 13 (+BOT2), 3600-5400 ticks each run twice/three times: byte-identical per-tick hashes;
+  the bots get into gameplay (GSTATE_PLAY ~4200 ticks, up to 16 objects).
+- **SfNet** (`src/port/SfNet.{c,h}`, n64net submodule `external/n64net` @ 39dccc9): lockstep, the whole game shared
+  from boot like two controllers on one console (each machine's own pad = its controller 1 -> host P1, guest P2;
+  pads 3-4 unplugged). Hooks: ReplayCheck Init (connect, the host's seed wins), ReplayCheck_FilterPads (after
+  osContGetReadData; ticks without a read get a filler input so the ledgers stay in step), ReplayCheck_EndTick
+  (sync check every 30 ticks with the replay hash), Save_ReadData/WriteData (the guest plays on the host's save
+  'SFSV', never writes). Handshake 'SFNH' compares the build fingerprint (`SFNET_BUILD_ID`, cmake/NetBuildId.cmake,
+  every build); room codes via n64net rendezvous (game id `sf64-us+<build>`); BYE / 20 s silence -> play on offline.
+  **i64-ready** like perfect_dark: `SfNet_SessionBlob` (host's save, 520 bytes), `SfNet_InitExternal`,
+  `SfNet_ExternalEvent` (away = wait without a limit).
+- `tools/net/pair-test.sh` (two copies in build-cmake, bots, compares sync checks AND both full per-tick hash
+  logs): direct 1800 ticks (1449 in gameplay) IN SYNC, every tick's hash identical; DESYNC_TEST=400 caught at 420;
+  EXTERNAL=1 (i64 stand-in) IN SYNC; SERVER=local room code direct IN SYNC.
+- NEXT: Versus with both players (menu path to VS for the bots; check that P2's input drives P2), rollback
+  (snapshots like perfect_dark: section pragma for the game's C globals + whatever heaps the game uses; Starship
+  has C++ port code, check the state there), time sync, iOS build, then the i64 module (MacBook agent).

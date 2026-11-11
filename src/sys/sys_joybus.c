@@ -1,5 +1,6 @@
 #include "sys.h"
 #include "port/ReplayCheck.h"
+#include "port/SfNet.h"
 
 OSContPad gControllerHold[4];
 OSContPad gControllerPress[4];
@@ -99,10 +100,16 @@ void Controller_ReadData(void) {
 }
 
 bool Save_ReadData(void) {
+    if (SfNet_SaveRead(&gSaveIOBuffer)) {
+        return true; /* online guest: the host's save */
+    }
     return Save_ReadEeprom(&gSaveIOBuffer) == 0;
 }
 
 bool Save_WriteData(void) {
+    if (SfNet_SaveWriteBlocked()) {
+        return true; /* online guest: never overwrite its own save */
+    }
     return Save_WriteEeprom(&gSaveIOBuffer) == 0;
 }
 

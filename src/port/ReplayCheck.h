@@ -23,6 +23,8 @@ int ReplayCheck_VsTimerCentis(void);
 /* SF64_REPLAY_CHECK=<file> per-tick state hash, SF64_REPLAY_RECORD/PLAY=<file> pads, SF64_REPLAY_FRAMES=n quit */
 /* right after osContGetReadData in Controller_ReadData */
 void ReplayCheck_FilterPads(OSContPad* pads);
+/* scripted test input (SF64_TEST_BOT=seed for controller 1, SF64_TEST_BOT2..4 for the others) */
+void ReplayCheck_BotPad(int tick, unsigned seed, OSContPad* pad);
 /* after Game_Update */
 void ReplayCheck_EndTick(void);
 

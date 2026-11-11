@@ -189,6 +189,20 @@ endif()
 
 # Netplay needs bit-identical simulation on every device: no FMA contraction
 # (clang's default -ffp-contract=on fuses a*b+c differently per target/optimizer).
+# netplay: n64net (external/n64net submodule: input ledger, rollback driver, room-code client)
+target_sources(${PROJECT_NAME} PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/external/n64net/client/src/n64net_input.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/external/n64net/client/src/n64net_rendezvous.cpp)
+target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/external/n64net/client/include
+    ${CMAKE_BINARY_DIR}/generated)
+# netplay build fingerprint (cmake/NetBuildId.cmake), refreshed at every build
+add_custom_target(sfnet_build_id ALL
+    COMMAND ${CMAKE_COMMAND} -DSRC=${CMAKE_CURRENT_SOURCE_DIR} -DOUT=${CMAKE_BINARY_DIR}/generated/sfnet_build_id.h
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/NetBuildId.cmake
+    BYPRODUCTS ${CMAKE_BINARY_DIR}/generated/sfnet_build_id.h
+    COMMENT "Netplay build fingerprint")
+add_dependencies(${PROJECT_NAME} sfnet_build_id)
+
 option(STARSHIP_STRICT_FP "Deterministic floating point (needed for netplay)" ON)
 if(STARSHIP_STRICT_FP AND NOT MSVC)
     target_compile_options(${PROJECT_NAME} PRIVATE -ffp-contract=off)

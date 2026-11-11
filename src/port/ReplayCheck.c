@@ -3,6 +3,7 @@
 #include <string.h>
 #include "global.h"
 #include "ReplayCheck.h"
+#include "SfNet.h"
 
 /* See ReplayCheck.h. */
 
@@ -23,6 +24,7 @@ typedef struct {
 } ReplayPad;
 static ReplayPad (*sPlay)[REPLAY_PADS] = NULL;
 static int sPlayCount = 0;
+static unsigned sBotSeed[REPLAY_PADS]; /* SF64_TEST_BOT / _BOT2..4: scripted input per controller (0 = off) */
 
 extern s32 sRandSeed1, sRandSeed2, sRandSeed3, sSeededRandSeed1, sSeededRandSeed2, sSeededRandSeed3;
 
@@ -96,6 +98,23 @@ static void Init(void) {
         sRecord = fopen(s, "w");
         if (sRecord) fprintf(sRecord, "# starship replay input: tick then 4 x (buttons sx sy rsx rsy err)\n");
     }
+    sBotSeed[0] = (s = EnvStr("SF64_TEST_BOT")) ? ((unsigned) strtoul(s, NULL, 0) | 1) : 0;
+    {
+        int i;
+        char name[32];
+        for (i = 1; i < REPLAY_PADS; i++) {
+            snprintf(name, sizeof(name), "SF64_TEST_BOT%d", i + 1);
+            sBotSeed[i] = (s = EnvStr(name)) ? ((unsigned) strtoul(s, NULL, 0) | 1) : 0;
+        }
+    }
+    if (sBotSeed[0] || sBotSeed[1]) {
+        sActive = 1;
+    }
+    if (SfNet_Wanted()) {
+        sActive = 1;
+        sSeed = SfNet_Init(sSeed); /* connects; the host's seed wins */
+        atexit(SfNet_Shutdown);
+    }
     if ((s = EnvStr("SF64_REPLAY_PLAY"))) {
         LoadPlayback(s);
         if (sMaxTicks < 0) sMaxTicks = sPlayCount + 30;
@@ -114,11 +133,37 @@ void ReplayCheck_GetSeeds(int* s1, int* s2, int* s3) {
     *s3 = 1 + (int) ((sSeed * 104729 + 29) % 29999);
 }
 
+/* Scripted test input: a new random choice every 8 ticks (stick, aim, fire, bombs, boost/brake, menus) */
+void ReplayCheck_BotPad(int tick, unsigned seed, OSContPad* pad) {
+    unsigned x = seed ^ ((unsigned) (tick / 8) * 2654435761u);
+    x ^= x >> 13;
+    x *= 0x5bd1e995u;
+    x ^= x >> 15;
+    pad->button = 0;
+    pad->stick_x = (s8) ((int) (x % 141) - 70);
+    pad->stick_y = (s8) ((int) ((x >> 8) % 141) - 70);
+    pad->right_stick_x = 0;
+    pad->right_stick_y = 0;
+    pad->err_no = 0;
+    if ((x >> 16) & 1) pad->button |= A_BUTTON;           /* fire / menu accept */
+    if (((x >> 17) & 7) == 0) pad->button |= B_BUTTON;    /* bomb / back */
+    if (((x >> 20) & 7) == 0) pad->button |= Z_TRIG;
+    if (((x >> 23) & 7) == 0) pad->button |= R_TRIG;
+    if (((x >> 26) & 7) == 0) pad->button |= U_CBUTTONS;  /* boost */
+    if (((x >> 29) & 3) == 0 && (tick % 8) < 2) pad->button |= START_BUTTON;
+}
+
 void ReplayCheck_FilterPads(OSContPad* pads) {
     int i;
     if (!ReplayCheck_Active()) {
         return;
     }
+    for (i = 0; i < REPLAY_PADS; i++) {
+        if (sBotSeed[i]) {
+            ReplayCheck_BotPad(sTick, sBotSeed[i], &pads[i]);
+        }
+    }
+    SfNet_FilterPads(pads, sTick);
     if (sPlay) {
         for (i = 0; i < REPLAY_PADS; i++) {
             ReplayPad* r = sTick < sPlayCount ? &sPlay[sTick][i] : NULL;
@@ -219,6 +264,11 @@ void ReplayCheck_EndTick(void) {
         sLogoWaitTicks = 0;
     }
 
+    if (SfNet_Active()) {
+        int n;
+        SfNet_EndTick(sTick, HashState(&n));
+    }
+
     if (sHashLog) {
         int n;
         unsigned long long h = HashState(&n);
@@ -232,6 +282,7 @@ void ReplayCheck_EndTick(void) {
         if (sRecord) fclose(sRecord);
         sHashLog = sRecord = NULL;
         fprintf(stderr, "ReplayCheck: %d ticks done, quitting\n", sTick);
+        SfNet_Shutdown();
         _Exit(0);
     }
 }
