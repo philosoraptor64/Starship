@@ -3,7 +3,7 @@
 # build-iossim/Starship.app): exercises the iOS code (Documents paths, netplay.cfg, Metal on iOS, the UIScene app)
 # without signing. Bots drive both; then the sync checks and both per-tick hash logs are compared.
 # Usage: tools/net/sim-test.sh  (env: FRAMES=1801 SEED=7 VS=1 [BOT_FROM=1500] LATENCY/JITTER/LOSS ROLLBACK=0
-#        SIM=<udid> (default booted)). Needs sf64.o2r/starship.o2r in build-cmake (copied to the app once).
+#        SIM=<udid> (default booted); AWAY=at:secs = the simulator app switches away for secs). Needs sf64.o2r/starship.o2r in build-cmake (copied to the app once).
 set -uo pipefail
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$root/build-cmake"
@@ -30,12 +30,17 @@ hpid=$!
 sleep 1
 SIMCTL_CHILD_SDL_AUDIODRIVER=dummy xcrun simctl launch --terminate-running-process "$SIM" $BUNDLE > /dev/null
 trap 'kill $hpid 2>/dev/null; xcrun simctl terminate "$SIM" $BUNDLE 2>/dev/null' INT TERM
+# AWAY=at:secs: switch the simulator to the Settings app at `at` s for `secs` s (the Mac must wait, then go on)
+if [ -n "${AWAY:-}" ]; then
+    (sleep "${AWAY%:*}"; xcrun simctl launch "$SIM" com.apple.Preferences > /dev/null; sleep "${AWAY#*:}";
+     xcrun simctl launch "$SIM" $BUNDLE > /dev/null) &
+fi
 wait $hpid
 sleep 3
 xcrun simctl terminate "$SIM" $BUNDLE 2>/dev/null
 cp "$docs/sfnet.log" "$out/guest.log" 2>/dev/null; cp "$docs/guest.hash" "$out/guest.hash" 2>/dev/null
 echo "# netplay off (sim-test.sh)" > "$docs/netplay.cfg"
-for side in host guest; do echo "== $side"; grep -E 'SfNet: (connected|tick|DESYNC|.*Playing)' "$out/$side.log" | tail -3; done
+for side in host guest; do echo "== $side"; grep -E 'SfNet: (connected|tick|DESYNC|.*Playing|away|back)|switched|is back' "$out/$side.log" | tail -5; done
 for side in host guest; do
     grep -q 'SfNet: connected' "$out/$side.log" 2>/dev/null || { echo "RESULT: FAILED ($side never connected)"; exit 1; }
 done

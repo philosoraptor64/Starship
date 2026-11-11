@@ -39,6 +39,8 @@ void SfNet_EndTick(int tick, unsigned long long hash);
 int SfNet_SaveRead(void* saveFile);
 int SfNet_SaveWriteBlocked(void);
 void SfNet_Shutdown(void);
+/* every frame: 1 while this app is in the background (iOS); the other player waits without a limit */
+void SfNet_SetAway(int away);
 /* rollback netplay (online Versus): the rollback point after each tick */
 int SfNet_RollbackActive(void);
 void SfNet_RollbackPoint(void);

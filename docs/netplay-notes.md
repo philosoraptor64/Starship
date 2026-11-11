@@ -196,3 +196,8 @@ cmake --build build-iossim --target Starship
   logs compared): `VS=1 FRAMES=3001` = rollback Versus, IN SYNC, **every tick identical between the Mac and iOS**.
 - Device build (to do on the MacBook: signing): same as the simulator command with `-DPLATFORM=OS64`, an iOS-device SDL
   with the UIScene patch, then sign like perfect_dark (stub profile, codesign) and copy the .o2r files into Documents.
+- **iOS background (2026-11-11):** Game.cpp watches SDL_APP_WILLENTERBACKGROUND/DIDENTERFOREGROUND: while in the
+  background no ticks and no rendering (Metal work in the background made our other ports come back at ~1 fps);
+  online `SfNet_SetAway` tells the other player, who waits without a limit (the user's rule), and keeps answering
+  packets. Simulator test `VS=1 AWAY=40:30 SF64_NET_DROP_SECS=10 tools/net/sim-test.sh`: the Mac waited 30.5 s, then
+  IN SYNC, every tick identical Mac vs iOS.

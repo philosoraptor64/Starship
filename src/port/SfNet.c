@@ -982,3 +982,26 @@ int SfNet_TimeSyncSkip(void) {
     }
     return 0;
 }
+
+/* This app went to the background (iOS) or came back: the other player waits without a limit meanwhile. The game
+ * doesn't tick while away (Game.cpp), so no input says "back" by accident. */
+void SfNet_SetAway(int away) {
+    static int sent = 0;
+    int i;
+    if (!sActive || sOffline || !sNet) {
+        return;
+    }
+    if (away != sent) {
+        sent = away;
+        for (i = 0; i < 3; i++) {
+            n64net_input_set_away(sNet, away);
+        }
+        NetLog("%s", away ? "away (app in the background), the game waits" : "back");
+    }
+    if (away) {
+        Poll();
+        if (sPeerLeft) {
+            GoOffline();
+        }
+    }
+}
