@@ -1,4 +1,5 @@
 #include "sys.h"
+#include "port/ReplayCheck.h"
 
 OSContPad gControllerHold[4];
 OSContPad gControllerPress[4];
@@ -93,6 +94,7 @@ void Controller_ReadData(void) {
     } else {
         osContStartReadData(&gSerialEventQueue);
         osContGetReadData(sNextController);
+        ReplayCheck_FilterPads(sNextController);
     }
 }
 

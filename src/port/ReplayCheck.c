@@ -1,4 +1,6 @@
 #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 #include "global.h"
 #include "ReplayCheck.h"
 
@@ -9,6 +11,62 @@ static int sActive = 0;
 static unsigned long long sSeed = 1;
 static int sVsTimerCalls = 0;
 static int sLogoWaitTicks = 0;
+static int sTick = 0; // logic ticks since boot
+static int sMaxTicks = -1;
+static FILE* sHashLog = NULL;
+static FILE* sRecord = NULL;
+#define REPLAY_PADS 4
+typedef struct {
+    u16 button;
+    s8 x, y, rx, ry;
+    u8 err;
+} ReplayPad;
+static ReplayPad (*sPlay)[REPLAY_PADS] = NULL;
+static int sPlayCount = 0;
+
+extern s32 sRandSeed1, sRandSeed2, sRandSeed3, sSeededRandSeed1, sSeededRandSeed2, sSeededRandSeed3;
+
+static void LoadPlayback(const char* path) {
+    FILE* f = fopen(path, "r");
+    char line[512];
+    int cap = 0;
+    if (!f) {
+        fprintf(stderr, "ReplayCheck: can't open %s\n", path);
+        exit(1);
+    }
+    while (fgets(line, sizeof(line), f)) {
+        int tick, n, used;
+        const char* p = line;
+        ReplayPad fr[REPLAY_PADS];
+        if (line[0] == '#' || sscanf(p, "%d%n", &tick, &used) != 1 || tick < 0) {
+            continue;
+        }
+        p += used;
+        memset(fr, 0, sizeof(fr));
+        for (n = 0; n < REPLAY_PADS; n++) {
+            unsigned b;
+            int x, y, rx, ry, err;
+            if (sscanf(p, "%x %d %d %d %d %d%n", &b, &x, &y, &rx, &ry, &err, &used) != 6) {
+                break;
+            }
+            p += used;
+            fr[n].button = b; fr[n].x = x; fr[n].y = y; fr[n].rx = rx; fr[n].ry = ry; fr[n].err = err;
+        }
+        if (n != REPLAY_PADS) {
+            continue;
+        }
+        if (tick >= cap) {
+            int nc = cap ? cap * 2 : 4096;
+            while (nc <= tick) nc *= 2;
+            sPlay = realloc(sPlay, nc * sizeof(*sPlay));
+            memset(sPlay + cap, 0, (nc - cap) * sizeof(*sPlay));
+            cap = nc;
+        }
+        memcpy(sPlay[tick], fr, sizeof(fr));
+        if (tick + 1 > sPlayCount) sPlayCount = tick + 1;
+    }
+    fclose(f);
+}
 
 static const char* EnvStr(const char* name) {
     const char* v = getenv(name);
@@ -27,6 +85,21 @@ static void Init(void) {
     if ((s = EnvStr("SF64_SEED"))) {
         sSeed = strtoull(s, NULL, 0);
     }
+    if ((s = EnvStr("SF64_REPLAY_FRAMES"))) {
+        sMaxTicks = atoi(s);
+    }
+    if ((s = EnvStr("SF64_REPLAY_CHECK"))) {
+        sHashLog = fopen(s, "w");
+        if (sHashLog) fprintf(sHashLog, "# starship replay check: seed %llu\n", sSeed);
+    }
+    if ((s = EnvStr("SF64_REPLAY_RECORD"))) {
+        sRecord = fopen(s, "w");
+        if (sRecord) fprintf(sRecord, "# starship replay input: tick then 4 x (buttons sx sy rsx rsy err)\n");
+    }
+    if ((s = EnvStr("SF64_REPLAY_PLAY"))) {
+        LoadPlayback(s);
+        if (sMaxTicks < 0) sMaxTicks = sPlayCount + 30;
+    }
 }
 
 int ReplayCheck_Active(void) {
@@ -39,6 +112,90 @@ void ReplayCheck_GetSeeds(int* s1, int* s2, int* s3) {
     *s1 = 1 + (int) (sSeed % 29999);
     *s2 = 1 + (int) ((sSeed * 7919 + 13) % 29999);
     *s3 = 1 + (int) ((sSeed * 104729 + 29) % 29999);
+}
+
+void ReplayCheck_FilterPads(OSContPad* pads) {
+    int i;
+    if (!ReplayCheck_Active()) {
+        return;
+    }
+    if (sPlay) {
+        for (i = 0; i < REPLAY_PADS; i++) {
+            ReplayPad* r = sTick < sPlayCount ? &sPlay[sTick][i] : NULL;
+            pads[i].button = r ? r->button : 0;
+            pads[i].stick_x = r ? r->x : 0;
+            pads[i].stick_y = r ? r->y : 0;
+            pads[i].right_stick_x = r ? r->rx : 0;
+            pads[i].right_stick_y = r ? r->ry : 0;
+            pads[i].err_no = r ? r->err : 0;
+            pads[i].gyro_x = pads[i].gyro_y = 0;
+        }
+        return;
+    }
+    for (i = 0; i < REPLAY_PADS; i++) {
+        pads[i].gyro_x = pads[i].gyro_y = 0; // not recorded
+    }
+    if (sRecord) {
+        fprintf(sRecord, "%d", sTick);
+        for (i = 0; i < REPLAY_PADS; i++) {
+            fprintf(sRecord, " %x %d %d %d %d %d", pads[i].button, pads[i].stick_x, pads[i].stick_y,
+                    pads[i].right_stick_x, pads[i].right_stick_y, pads[i].err_no);
+        }
+        fputc('\n', sRecord);
+    }
+}
+
+/* FNV-1a 64 */
+static unsigned long long HashBytes(unsigned long long h, const void* data, size_t len) {
+    const unsigned char* p = data;
+    size_t i;
+    for (i = 0; i < len; i++) {
+        h ^= p[i];
+        h *= 0x100000001b3ull;
+    }
+    return h;
+}
+#define HASHV(h, v) h = HashBytes(h, &(v), sizeof(v))
+
+static unsigned long long HashObj(unsigned long long h, Object* o) {
+    HASHV(h, o->status);
+    HASHV(h, o->id);
+    HASHV(h, o->pos);
+    HASHV(h, o->rot);
+    return h;
+}
+
+static unsigned long long HashState(int* numObjs) {
+    unsigned long long h = 0xcbf29ce484222325ull;
+    int i, n = 0;
+    HASHV(h, gGameState);
+    HASHV(h, gGameFrameCount);
+    HASHV(h, sRandSeed1); HASHV(h, sRandSeed2); HASHV(h, sRandSeed3);
+    HASHV(h, sSeededRandSeed1); HASHV(h, sSeededRandSeed2); HASHV(h, sSeededRandSeed3);
+    if (gPlayer != NULL) {
+        for (i = 0; i < gCamCount && i < 4; i++) {
+            Player* p = &gPlayer[i];
+            HASHV(h, p->pos); HASHV(h, p->vel); HASHV(h, p->rot); HASHV(h, p->trueZpos);
+            HASHV(h, p->state); HASHV(h, p->form); HASHV(h, p->shields); HASHV(h, p->damage);
+        }
+    }
+    for (i = 0; i < ARRAY_COUNT(gActors); i++) {
+        if (gActors[i].obj.status != OBJ_FREE) {
+            h = HashObj(h, &gActors[i].obj); HASHV(h, gActors[i].state); HASHV(h, gActors[i].health); n++;
+        }
+    }
+    for (i = 0; i < ARRAY_COUNT(gBosses); i++) {
+        if (gBosses[i].obj.status != OBJ_FREE) {
+            h = HashObj(h, &gBosses[i].obj); HASHV(h, gBosses[i].state); HASHV(h, gBosses[i].health); n++;
+        }
+    }
+    for (i = 0; i < ARRAY_COUNT(gItems); i++) {
+        if (gItems[i].obj.status != OBJ_FREE) {
+            h = HashObj(h, &gItems[i].obj); HASHV(h, gItems[i].state); n++;
+        }
+    }
+    *numObjs = n;
+    return h;
 }
 
 int ReplayCheck_VsTimerCentis(void) {
@@ -60,5 +217,21 @@ void ReplayCheck_EndTick(void) {
         }
     } else {
         sLogoWaitTicks = 0;
+    }
+
+    if (sHashLog) {
+        int n;
+        unsigned long long h = HashState(&n);
+        fprintf(sHashLog, "%d state %d frame %d objs %d rng %d %d %d hash %016llx\n", sTick, gGameState, gGameFrameCount, n,
+                sRandSeed1, sRandSeed2, sRandSeed3, h);
+    }
+
+    sTick++;
+    if (sMaxTicks >= 0 && sTick >= sMaxTicks) {
+        if (sHashLog) fclose(sHashLog);
+        if (sRecord) fclose(sRecord);
+        sHashLog = sRecord = NULL;
+        fprintf(stderr, "ReplayCheck: %d ticks done, quitting\n", sTick);
+        _Exit(0);
     }
 }

@@ -9,6 +9,8 @@
  *   - the boot logo waits a fixed 30 ticks instead of one real second.
  */
 
+#include <libultraship/libultra/controller.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -18,6 +20,9 @@ int ReplayCheck_Active(void);
 void ReplayCheck_GetSeeds(int* s1, int* s2, int* s3);
 /* centiseconds the Versus timer advances in this tick */
 int ReplayCheck_VsTimerCentis(void);
+/* SF64_REPLAY_CHECK=<file> per-tick state hash, SF64_REPLAY_RECORD/PLAY=<file> pads, SF64_REPLAY_FRAMES=n quit */
+/* right after osContGetReadData in Controller_ReadData */
+void ReplayCheck_FilterPads(OSContPad* pads);
 /* after Game_Update */
 void ReplayCheck_EndTick(void);
 
