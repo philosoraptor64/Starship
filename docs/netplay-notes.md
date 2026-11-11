@@ -55,7 +55,9 @@ Verified only that it builds and boots to the title. NOT yet: input record/play,
 
 ## Next steps (small, one commit each)
 1. User plays it on the Mac (picture, sound, controller).
-3b. **Written + builds, NOT yet run (2026-11-10 night):** SF64_REPLAY_CHECK/RECORD/PLAY/FRAMES in ReplayCheck.c
+3b. **First test PASSED (2026-11-10 night):** 3 idle runs from boot x 600 ticks byte-identical (logo -> title at tick
+   33 every time; hashes in build-cmake/replay/). NEXT: scripted/human input through the menus into a level and into
+   Versus, then the iPhone build. Details: SF64_REPLAY_CHECK/RECORD/PLAY/FRAMES in ReplayCheck.c
    (pads hooked after osContGetReadData in sys_joybus.c, hash in ReplayCheck_EndTick, `_Exit(0)` after N ticks).
    First test to run: idle from boot, 3 runs identical:
    `cd build-cmake && SF64_REPLAY_CHECK=/tmp/a.hash SF64_REPLAY_FRAMES=1500 ./Starship` (x3, compare), then scripted
