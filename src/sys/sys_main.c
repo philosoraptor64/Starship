@@ -1,5 +1,7 @@
 #include "sys.h"
+#include "port/SnapshotSection.h"
 #include "port/ReplayCheck.h"
+#include "port/Rollback.h"
 #include "sf64audio_external.h"
 
 #include <functions.h>
@@ -47,7 +49,7 @@ OSMesg sTimerTaskMsgBuff[16];
 OSMesgQueue gTimerWaitMesgQueue;
 OSMesg sTimerWaitMsgBuff[1];
 
-GfxPool gGfxPools[2];
+SF_SNAPSHOT_OUTSIDE GfxPool gGfxPools[2]; // display lists: render output, not simulation state
 
 GfxPool* gGfxPool;
 SPTask* gGfxTask;
@@ -230,18 +232,14 @@ void Graphics_ThreadEntry(void* arg0) {
     // }
 }
 
-void Graphics_ThreadUpdate() {
-
-    if (GfxDebuggerIsDebugging()) {
-        Graphics_PushFrame(gGfxPool->masterDL);
-        return;
-    }
-
+// @port: one logic tick (input, game update, display lists), also run alone when rollback resimulates a tick
+// (resim: no rumble; nothing is submitted or played)
+void Main_LogicTick(bool resim) {
     gSysFrameCount++;
     Graphics_InitializeTask(gSysFrameCount);
     Controller_UpdateInput();
     Controller_ReadData();
-    Controller_Rumble();
+    Controller_Rumble(resim);
     Main_SetVIMode();
     {
         __gSPSegment(gUnkDisp1++, 0, 0);
@@ -257,6 +255,17 @@ void Graphics_ThreadUpdate() {
         gDPFullSync(gMasterDisp++);
         gSPEndDisplayList(gMasterDisp++);
     }
+}
+
+void Graphics_ThreadUpdate() {
+
+    if (GfxDebuggerIsDebugging()) {
+        Graphics_PushFrame(gGfxPool->masterDL);
+        return;
+    }
+
+    Main_LogicTick(false);
+    Rollback_AfterTick(); // @port: netplay rollback point / SyncTest (the state = before the next tick)
     Graphics_SetTask();
 
     if (GfxDebuggerIsDebuggingRequested()) {

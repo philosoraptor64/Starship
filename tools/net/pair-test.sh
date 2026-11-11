@@ -4,13 +4,15 @@
 # Usage: tools/net/pair-test.sh  (env: FRAMES=1801 SEED=7 DELAY=2 HOST_BOT=5 GUEST_BOT=105 (0 = play it yourself);
 #        DESYNC_TEST=tick (the guest's RNG is nudged: must report DESYNC); SERVER=local [ROOM=SFTS] [RELAY=1];
 #        EXTERNAL=1 = the connection belongs to a stand-in for i64; GUEST_FRAMES=n = the guest quits early;
-#        VS=1 = scripted menus into a 2-player Versus match, bots fly from BOT_FROM=1500)
+#        VS=1 = scripted menus into a 2-player Versus match, bots fly from BOT_FROM=1500;
+#        SYNCTEST=n = both sides rewind n ticks every tick in Versus gameplay and check the resimulation)
 set -uo pipefail
 cd "$(dirname "$0")/../../build-cmake"
 FRAMES=${FRAMES:-1801}; SEED=${SEED:-7}; DELAY=${DELAY:-2}; HOST_BOT=${HOST_BOT:-5}; GUEST_BOT=${GUEST_BOT:-105}
 out=net-test/$(date +%Y%m%d-%H%M%S); mkdir -p "$out"
 common=(SDL_AUDIODRIVER=dummy SDL_MAC_BACKGROUND_APP=1 SDL_WINDOW_NO_ACTIVATION_WHEN_SHOWN=1 SF64_SEED=$SEED
-        SF64_REPLAY_FRAMES=$FRAMES SF64_NET_DELAY=$DELAY SF64_NET_WAIT_SECS=${WAIT_SECS:-60})
+        SF64_REPLAY_FRAMES=$FRAMES SF64_NET_DELAY=$DELAY SF64_NET_WAIT_SECS=${WAIT_SECS:-60}
+        ${SYNCTEST:+SF64_SYNCTEST=$SYNCTEST} ${SYNCTEST_FULL:+SF64_SYNCTEST_FULL=1})
 hostbot=(); [ "$HOST_BOT" != 0 ] && hostbot=(SF64_NET_BOT=$HOST_BOT)
 guestbot=(); [ "$GUEST_BOT" != 0 ] && guestbot=(SF64_NET_BOT=$GUEST_BOT)
 # VS=1: scripted menus into a 2-player Versus Point Match (tools/net/vs-*.txt), then the bots fly from BOT_FROM
@@ -44,7 +46,7 @@ trap 'kill $hpid $gpid $spid 2>/dev/null' INT TERM
 wait $hpid; wait $gpid
 [ -n "$spid" ] && kill $spid 2>/dev/null
 for side in host guest; do
-    echo "== $side"; grep -E 'SfNet: (connected|tick|DESYNC|room|the other|Lost|.*Playing)|ReplayCheck' "$out/$side.log" | tail -5
+    echo "== $side"; grep -E 'SfNet: (connected|tick|DESYNC|room|the other|Lost|.*Playing)|ReplayCheck|SyncTest: (tick|MISMATCH)' "$out/$side.log" | tail -6
 done
 for side in host guest; do
     if ! grep -q 'SfNet: connected\|SfNet: running' "$out/$side.log"; then echo "RESULT: FAILED ($side never connected)"; exit 1; fi

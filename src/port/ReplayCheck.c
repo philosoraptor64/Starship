@@ -4,14 +4,17 @@
 #include "global.h"
 #include "ReplayCheck.h"
 #include "SfNet.h"
+#include "Rollback.h"
+#include "SnapshotSection.h"
 
 /* See ReplayCheck.h. */
 
 static int sInit = 0;
 static int sActive = 0;
 static unsigned long long sSeed = 1;
-static int sVsTimerCalls = 0;
-static int sLogoWaitTicks = 0;
+/* game state, rolled back with the game (Versus timer, boot logo wait) */
+SF_SNAPSHOT_INSIDE static int sVsTimerCalls = 0;
+SF_SNAPSHOT_INSIDE static int sLogoWaitTicks = 0;
 static int sTick = 0; // logic ticks since boot
 static int sMaxTicks = -1;
 static FILE* sHashLog = NULL;
@@ -247,6 +250,19 @@ static unsigned long long HashState(int* numObjs) {
     return h;
 }
 
+unsigned long long ReplayCheck_StateHash(void) {
+    int n;
+    return HashState(&n);
+}
+
+int ReplayCheck_GetTick(void) {
+    return sTick;
+}
+
+void ReplayCheck_SetTick(int tick) {
+    sTick = tick;
+}
+
 int ReplayCheck_VsTimerCentis(void) {
     /* 30 logic ticks per second: 100 centiseconds spread over 30 ticks without drift */
     int prev = sVsTimerCalls * 100 / 30;
@@ -266,6 +282,11 @@ void ReplayCheck_EndTick(void) {
         }
     } else {
         sLogoWaitTicks = 0;
+    }
+
+    if (gRollbackResim) {
+        sTick++; /* resimulated tick: no logs, no quitting */
+        return;
     }
 
     if (SfNet_Active()) {

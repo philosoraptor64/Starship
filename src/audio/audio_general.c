@@ -1,3 +1,4 @@
+extern int gRollbackResim;
 #include "sys.h"
 #include "sf64audio_provisional.h"
 #include "sf64context.h"
@@ -1278,6 +1279,9 @@ void Audio_ClearBGMMute(u8 channelIndex) {
 }
 
 void Audio_PlaySfx(u32 sfxId, f32* sfxSource, u8 token, f32* freqMod, f32* volMod, s8* reverbAdd) {
+    if (gRollbackResim) {
+        return; // @port: rollback resimulation: the sound was already played (or is about to be)
+    }
     if (sSfxBankMuted[SFX_BANK_ALT(sfxId)] == 0) {
         SfxRequest* request = &sSfxRequests[sSfxRequestWriteIndex];
 

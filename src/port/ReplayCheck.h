@@ -25,6 +25,10 @@ int ReplayCheck_VsTimerCentis(void);
 void ReplayCheck_FilterPads(OSContPad* pads);
 /* scripted test input (SF64_TEST_BOT=seed for controller 1, SF64_TEST_BOT2..4 for the others) */
 void ReplayCheck_BotPad(int tick, unsigned seed, OSContPad* pad);
+/* the replay/sync state hash; logic ticks since boot (rollback rewinds it) */
+unsigned long long ReplayCheck_StateHash(void);
+int ReplayCheck_GetTick(void);
+void ReplayCheck_SetTick(int tick);
 /* after Game_Update */
 void ReplayCheck_EndTick(void);
 

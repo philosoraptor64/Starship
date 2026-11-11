@@ -1,8 +1,10 @@
 #include "sys.h"
+#include "port/SnapshotSection.h"
 
 // s32 sMemoryBuffer[0x8800];
 // @ port: Increase memory buffer size.
-s32 sMemoryBuffer[1000000];
+// (outside the snapshot section: Snapshot.c copies only its used part, up to sMemoryPtr)
+SF_SNAPSHOT_OUTSIDE s32 sMemoryBuffer[1000000];
 s32* sMemoryPtr;
 
 void Memory_FreeAll(void) {

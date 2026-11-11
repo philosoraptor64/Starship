@@ -203,6 +203,15 @@ add_custom_target(sfnet_build_id ALL
     COMMENT "Netplay build fingerprint")
 add_dependencies(${PROJECT_NAME} sfnet_build_id)
 
+# rollback snapshots (src/port/SnapshotSection.h): the game's C globals go into the __SFSNAP segment (Apple only)
+if(APPLE)
+    file(GLOB_RECURSE SF_SNAPSHOT_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/engine/*.c" "${CMAKE_CURRENT_SOURCE_DIR}/src/overlays/*.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/sys/*.c")
+    list(APPEND SF_SNAPSHOT_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/1FA60.c")
+    set_source_files_properties(${SF_SNAPSHOT_FILES} PROPERTIES COMPILE_OPTIONS
+        "-include;${CMAKE_CURRENT_SOURCE_DIR}/src/port/SnapshotSection.h;-DSF_SNAPSHOT_FORCE;-fno-common")
+endif()
+
 option(STARSHIP_STRICT_FP "Deterministic floating point (needed for netplay)" ON)
 if(STARSHIP_STRICT_FP AND NOT MSVC)
     target_compile_options(${PROJECT_NAME} PRIVATE -ffp-contract=off)

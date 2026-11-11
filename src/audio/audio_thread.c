@@ -1,3 +1,4 @@
+extern int gRollbackResim;
 #include "sys.h"
 #include "sf64audio_provisional.h"
 #include "audiothread_cmd.h"
@@ -304,6 +305,9 @@ void AudioThread_InitQueues(void) {
 }
 
 void AudioThread_QueueCmd(AudioCmd cmd) {
+    if (gRollbackResim) {
+        return; // @port: rollback resimulation: music/sound commands were already sent
+    }
     AudioCmd* audioCmd = &gThreadCmdBuffer[gThreadCmdWritePos & 0xFF];
 
     *audioCmd = cmd;

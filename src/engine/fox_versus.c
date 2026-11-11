@@ -1,3 +1,4 @@
+#include "port/SnapshotSection.h"
 #include "port/SfNet.h"
 #include "prevent_bss_reordering.h"
 #include "port/ReplayCheck.h"
@@ -44,8 +45,8 @@ s32 sPlayerDownFrames[4];
 s32 D_80178830;
 s32 D_80178838[5];
 s32 D_80178850[4];
-OSTime sDrawTime;
-OSTime sPrevDrawTime;
+SF_SNAPSHOT_OUTSIDE OSTime sDrawTime; // @port: wall clock (online the timer counts ticks), outside rollback snapshots
+SF_SNAPSHOT_OUTSIDE OSTime sPrevDrawTime;
 
 s32 D_800D4A90 = 0;
 s32 D_800D4A94 = 0;

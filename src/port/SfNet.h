@@ -25,6 +25,8 @@ int SfNet_Wanted(void);
 /* connects (blocks); returns the session's seed (the host's) */
 unsigned long long SfNet_Init(unsigned long long seed);
 int SfNet_Active(void);
+/* 1 from connecting until the game quits, also after the other player left (SfNet_Active: connected now) */
+int SfNet_InSession(void);
 int SfNet_LocalPlayer(void);
 /* online Versus (4 cameras): draw only this machine's pilot, full screen (SF64_NET_VIEW=split: classic 4-way) */
 int SfNet_FullView(int camCount);
@@ -36,6 +38,9 @@ void SfNet_EndTick(int tick, unsigned long long hash);
 int SfNet_SaveRead(void* saveFile);
 int SfNet_SaveWriteBlocked(void);
 void SfNet_Shutdown(void);
+/* rollback netplay (online Versus): the rollback point after each tick */
+int SfNet_RollbackActive(void);
+void SfNet_RollbackPoint(void);
 
 /* A host app (i64) owns the connection and starts the game fresh on every machine. */
 typedef struct SfNetExternal {

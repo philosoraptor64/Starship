@@ -77,7 +77,7 @@ typedef struct {
 void Controller_Init(void);
 void Controller_UpdateInput(void);
 void Controller_ReadData(void);
-void Controller_Rumble(void);
+void Controller_Rumble(bool resim);
 
 s32 Timer_CreateTask(u64, TimerAction, s32*, s32);
 void Timer_Increment(s32* address, s32 value);

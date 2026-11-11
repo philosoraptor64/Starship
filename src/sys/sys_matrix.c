@@ -1,3 +1,4 @@
+#include "port/SnapshotSection.h"
 #include "sys.h"
 
 #include "port/interpolation/FrameInterpolation.h"
@@ -25,7 +26,7 @@ Matrix* gGfxMatrix;
 Matrix sGfxMatrixStack[0x1000];
 Matrix* gCalcMatrix;
 Matrix sCalcMatrixStack[0x1000];
-Matrix sInterpolationMatrixStack[0x1000];
+SF_SNAPSHOT_OUTSIDE Matrix sInterpolationMatrixStack[0x1000]; // @port: render-only (frame interpolation), outside rollback snapshots
 Matrix* gInterpolationMatrix = &sInterpolationMatrixStack[0];
 
 // Copies src Matrix into dst

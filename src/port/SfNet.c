@@ -13,6 +13,7 @@
 #include "sf64save.h"
 #include "ReplayCheck.h"
 #include "SfNet.h"
+#include "Rollback.h"
 #include "n64net_input.h"
 #include "n64net_rendezvous.h"
 #include "sfnet_build_id.h"
@@ -49,6 +50,8 @@ static int sPeerAway = 0; /* i64 says the other player's app is in the backgroun
 static volatile int sMismatch = 0;
 static int sLastTick = -1;
 static OSContPad sTickPads[2];
+#define SFNET_PAD_RING 128
+static OSContPad sUsedPads[SFNET_PAD_RING][2]; /* the pads each tick used (resimulation after going offline) */
 static unsigned long long sStallUsecs = 0;
 static unsigned sStalls = 0;
 static int sDesyncReported = 0;
@@ -528,6 +531,10 @@ int SfNet_Active(void) {
     return sActive && !sOffline;
 }
 
+int SfNet_InSession(void) {
+    return sActive; /* stays after a disconnect (the match keeps its two players) */
+}
+
 int SfNet_LocalPlayer(void) {
     return sIsHost ? 0 : 1;
 }
@@ -594,10 +601,21 @@ void SfNet_FilterPads(OSContPad* pads, int tick) {
     if (!sActive) {
         return;
     }
-    if (!sOffline) {
+    if (gRollbackResim && sOffline) {
+        sTickPads[0] = sUsedPads[tick % SFNET_PAD_RING][0];
+        sTickPads[1] = sUsedPads[tick % SFNET_PAD_RING][1];
+    } else if (gRollbackResim) {
+        /* resimulation: the ledger's inputs for that tick (confirmed, or the newest prediction) */
+        int p;
+        for (p = 0; p < 2; p++) {
+            n64net_pad n;
+            n64net_input_get(sNet, p, (u32) tick, &n);
+            FromNet(&n, &sTickPads[p]);
+        }
+    } else if (!sOffline) {
         Poll();
     }
-    if (tick != sLastTick) {
+    if (!gRollbackResim && tick != sLastTick) {
         OSContPad local = pads[0]; /* this machine's own controller is always controller 1 */
         int t;
         if (sBotSeed && tick >= sBotFrom) {
@@ -606,6 +624,8 @@ void SfNet_FilterPads(OSContPad* pads, int tick) {
         /* ticks in which the game read no pads still get an input (unchanged): the ledgers stay in step */
         for (t = sLastTick + 1; t <= tick; t++) {
             ExchangeTick(t, &local);
+            sUsedPads[t % SFNET_PAD_RING][0] = sTickPads[0];
+            sUsedPads[t % SFNET_PAD_RING][1] = sTickPads[1];
         }
         sLastTick = tick;
     }
@@ -698,4 +718,12 @@ int SfNet_FullView(int camCount) {
         split = v && !strcmp(v, "split");
     }
     return camCount == 4 && sActive && !split; /* stays after a disconnect: the view doesn't jump */
+}
+
+/* rollback netplay: not yet (lockstep); see Rollback.c */
+int SfNet_RollbackActive(void) {
+    return 0;
+}
+
+void SfNet_RollbackPoint(void) {
 }

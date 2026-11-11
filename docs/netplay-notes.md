@@ -124,3 +124,22 @@ Verified only that it builds and boots to the title. NOT yet: input record/play,
   (7681 in a Point Match, full view): every per-tick hash identical. Watch: the VS HUD code updates per-player HUD
   animation counters (D_80161738/48/60, fox_hud.c ~2954) while drawing, i.e. only for the local view online; they
   look HUD-only, but if a desync ever shows up after scoring, check them first.
+
+## Rollback groundwork: snapshots + SyncTest PASS in Versus (2026-11-11, Studio)
+- Snapshot = the `__SFSNAP` segment (game C globals of src/engine, src/overlays, src/sys, src/1FA60.c, force-included
+  `src/port/SnapshotSection.h` + -fno-common, Apple only; ~1.1 MB) + the used part of `sMemoryBuffer` (the game's bump
+  allocator, everything Memory_Allocate hands out). Outside: gGfxPools (display lists), sMemoryBuffer itself,
+  sInterpolationMatrixStack (frame interpolation), sDrawTime/sPrevDrawTime (wall clock), gControllerRumbleEnabled
+  (rumble output), and src/audio + buffers.c (audio heap, framebuffers) are never in. Inside: ReplayCheck's
+  sVsTimerCalls/sLogoWaitTicks (game state kept in port code). Save/load ~0.05-0.15 ms.
+- `Main_LogicTick(resim)` (sys_main.c) = one tick; Graphics_ThreadUpdate = Main_LogicTick(false) + Rollback_AfterTick()
+  (the rollback point) + submit + audio. Resim: no sound (Audio_PlaySfx/AudioThread_QueueCmd return while
+  gRollbackResim), Controller_Rumble only clears the requests, SfNet reads the ledger (or its used-pads ring after
+  going offline), ReplayCheck neither logs nor quits.
+- Rollback is meant for Versus gameplay only (`Rollback_Safe`: gVersusMode, GSTATE_PLAY, no gNextGameState): the
+  main game reads audio state (radio voices: Audio_GetCurrentVoice), which isn't snapshotted.
+- `SF64_SYNCTEST=8 [SF64_SYNCTEST_FULL=1]` (pair test `SYNCTEST=8 SYNCTEST_FULL=1 VS=1`): every Versus tick rewound 8
+  ticks and resimulated: 2269 checks per side, 0 hash mismatches, **whole snapshot byte-identical** (incl. after the
+  other player quit). Fixes found by the full compare: rumble flags (resim must still clear them), the plugged
+  controllers changing when going offline (now `SfNet_InSession`). Also fixed: online, this machine's own pad
+  rumbles for its own pilot only (it rumbled for player 1 on both).

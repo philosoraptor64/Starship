@@ -1,3 +1,4 @@
+#include "port/SnapshotSection.h"
 #include "sys.h"
 #include "port/ReplayCheck.h"
 #include "port/SfNet.h"
@@ -6,7 +7,7 @@ OSContPad gControllerHold[4];
 OSContPad gControllerPress[4];
 u8 gControllerPlugged[4];
 u32 gControllerLock;
-u8 gControllerRumbleEnabled[4];
+SF_SNAPSHOT_OUTSIDE u8 gControllerRumbleEnabled[4]; // @port: rumble output, outside rollback snapshots
 OSContPad sNextController[4];
 OSContPad sPrevController[4];
 OSContStatus sControllerStatus[4];
@@ -63,7 +64,7 @@ void Controller_Init(void) {
 
 // LTODO: Fix this
 // (online: exactly the two players' controllers are plugged, so Versus has two pilots)
-#define osContGetStatus(x) (SfNet_Active() ? ((x) < 2) : true)
+#define osContGetStatus(x) (SfNet_InSession() ? ((x) < 2) : true)
 
 void Controller_UpdateInput(void) {
     s32 i;
@@ -114,32 +115,42 @@ bool Save_WriteData(void) {
     return Save_WriteEeprom(&gSaveIOBuffer) == 0;
 }
 
-void Controller_Rumble(void) {
+void Controller_Rumble(bool resim) {
     s32 i;
 
-    for (i = 0; i < 4; i++) {
-        if ((gControllerPlugged[i] != 0) && (sControllerStatus[i].err_no == 0)) {
-            if (sControllerStatus[i].status & 1) {
-                if (gControllerRumbleEnabled[i] == 0) {
-                    if (osMotorInit(&gSerialEventQueue, &sControllerMotor[i], i)) {
-                        gControllerRumbleEnabled[i] = 0;
+    // @port: rollback resimulation only clears the requests (the motor already ran); online, this machine's own
+    // pad (its controller 1) rumbles for its own pilot only
+    for (i = 0; i < 4 && !resim; i++) {
+        s32 pad = i;
+        s32 flags = gControllerRumbleFlags[i];
+        if (SfNet_InSession()) {
+            if (i != 0) {
+                continue;
+            }
+            flags = gControllerRumbleFlags[SfNet_LocalPlayer()];
+        }
+        if ((gControllerPlugged[pad] != 0) && (sControllerStatus[pad].err_no == 0)) {
+            if (sControllerStatus[pad].status & 1) {
+                if (gControllerRumbleEnabled[pad] == 0) {
+                    if (osMotorInit(&gSerialEventQueue, &sControllerMotor[pad], pad)) {
+                        gControllerRumbleEnabled[pad] = 0;
                     } else {
-                        gControllerRumbleEnabled[i] = 1;
+                        gControllerRumbleEnabled[pad] = 1;
                     }
                 }
-                if (gControllerRumbleEnabled[i] == 1) {
-                    if (gControllerRumbleFlags[i] != 0) {
-                        if (osMotorStart(&sControllerMotor[i])) {
-                            gControllerRumbleEnabled[i] = 0;
+                if (gControllerRumbleEnabled[pad] == 1) {
+                    if (flags != 0) {
+                        if (osMotorStart(&sControllerMotor[pad])) {
+                            gControllerRumbleEnabled[pad] = 0;
                         }
                     } else {
-                        if (osMotorStop(&sControllerMotor[i])) {
-                            gControllerRumbleEnabled[i] = 0;
+                        if (osMotorStop(&sControllerMotor[pad])) {
+                            gControllerRumbleEnabled[pad] = 0;
                         }
                     }
                 }
             } else {
-                gControllerRumbleEnabled[i] = 0;
+                gControllerRumbleEnabled[pad] = 0;
             }
         }
     }
