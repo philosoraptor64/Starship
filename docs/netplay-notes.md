@@ -214,5 +214,6 @@ cmake --build build-iossim --target Starship
   (portrait, number, boost, shield, bombs, kill stars: HUD_VS_DrawHUD) and the radar window are drawn as usual for
   their quarter, then their 2D rectangles in the display list just emitted are moved out of the quarter and doubled
   (positions x2, texture steps /2): the quarter's HUD zoomed to the full screen, the same layout for every player.
-  The radar marks need nothing (3D, relative to the viewport, which fills the screen). Screenshot: radar bottom-left
+  The radar marks (3D, relative to the viewport) drop the widescreen offset gHudOffsetPers in the full view so they
+  stay inside the zoomed window on wide screens (checked in the simulator at the iPhone 17 aspect). Screenshot: radar bottom-left
   with marks inside, shield + portrait + number at the bottom, boost top-right, on both machines. IN SYNC.

@@ -2204,7 +2204,10 @@ s32 HUD_RadarMarks_Update(void) {
     }
 
     Matrix_Push(&gGfxMatrix);
-    Matrix_Translate(gGfxMatrix, x1 + gHudOffsetPers, y1, z1, MTXF_APPLY);
+    // @port: online full view: the zoomed radar window stays in the centred 4:3 area, so the marks drop the
+    // widescreen offset (the projection keeps the vertical scale on any screen width)
+    Matrix_Translate(gGfxMatrix, x1 + ((gVersusMode && SfNet_FullView(gCamCount)) ? 0.0f : gHudOffsetPers), y1, z1,
+                     MTXF_APPLY);
 
     if ((gCurrentLevel == LEVEL_SECTOR_Z) && (gRadarMissileAlarmTimer != 0)) {
         Matrix_Push(&gGfxMatrix);
