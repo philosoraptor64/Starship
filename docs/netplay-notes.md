@@ -201,3 +201,12 @@ cmake --build build-iossim --target Starship
   online `SfNet_SetAway` tells the other player, who waits without a limit (the user's rule), and keeps answering
   packets. Simulator test `VS=1 AWAY=40:30 SF64_NET_DROP_SECS=10 tools/net/sim-test.sh`: the Mac waited 30.5 s, then
   IN SYNC, every tick identical Mac vs iOS.
+- **iOS device build compiles and links (2026-11-11, Studio; not signed: needs the MacBook).** Device SDL (UIScene
+  patch) installed at ~/Development/N64/deps-ios/sdl2 (built from BattleShip's patched SDL source), then:
+  `cmake -S . -B build-ios -G Ninja -DCMAKE_SYSTEM_NAME=iOS -DPLATFORM=OS64 -DDEPLOYMENT_TARGET=17.0
+  -DCMAKE_OSX_SYSROOT=iphoneos -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=17.0
+  -DCMAKE_BUILD_TYPE=Release -DSDL2_DIR=<deps-ios>/sdl2/lib/cmake/SDL2 -DCMAKE_PREFIX_PATH=<deps-ios>/sdl2
+  -DBUILD_SM64=OFF` + `cmake --build build-ios --target Starship` -> build-ios/Starship.app (platform IOS, minos 17).
+  MacBook: sign like perfect_dark's M7b (stub profile for io.github.philosoraptor.starship, existing certificate,
+  never a new one), install, copy sf64.o2r + starship.o2r into the app's Documents, Bluetooth controller.
+  Online: Documents/netplay.cfg (SF64_NET_PEER=<host>:7401 or SF64_NET_SERVER/ROOM...), log Documents/sfnet.log.
