@@ -218,6 +218,9 @@ static unsigned long long HashState(int* numObjs) {
     HASHV(h, gGameFrameCount);
     HASHV(h, sRandSeed1); HASHV(h, sRandSeed2); HASHV(h, sRandSeed3);
     HASHV(h, sSeededRandSeed1); HASHV(h, sSeededRandSeed2); HASHV(h, sSeededRandSeed3);
+    if (gVersusMode) {
+        HASHV(h, gVsPoints); h = HashBytes(h, gVsCountdown, 3 * sizeof(s32)); HASHV(h, gPlayerInactive);
+    }
     if (gPlayer != NULL) {
         for (i = 0; i < gCamCount && i < 4; i++) {
             Player* p = &gPlayer[i];

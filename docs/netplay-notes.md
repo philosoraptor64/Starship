@@ -120,3 +120,7 @@ Verified only that it builds and boots to the title. NOT yet: input record/play,
   **Still quarter-sized:** the local pilot's HUD (radar box, health bar, portrait, player number, boost gauge) stays
   at its quarter's position (P1 top-left, P2 top-right), drawn in the per-view Display/HUD code with quarter
   coordinates. Next: a full-screen layout for those (ideally the 1-player HUD positions).
+- Replay/sync hash now also covers gVsPoints, gVsCountdown and gPlayerInactive in Versus. VS pair test 9000 ticks
+  (7681 in a Point Match, full view): every per-tick hash identical. Watch: the VS HUD code updates per-player HUD
+  animation counters (D_80161738/48/60, fox_hud.c ~2954) while drawing, i.e. only for the local view online; they
+  look HUD-only, but if a desync ever shows up after scoring, check them first.
