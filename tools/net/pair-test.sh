@@ -20,7 +20,7 @@ hostbot=(); [ "$HOST_BOT" != 0 ] && hostbot=(SF64_NET_BOT=$HOST_BOT)
 guestbot=(); [ "$GUEST_BOT" != 0 ] && guestbot=(SF64_NET_BOT=$GUEST_BOT)
 # VS=1: scripted menus into a 2-player Versus Point Match (tools/net/vs-*.txt), then the bots fly from BOT_FROM
 if [ "${VS:-0}" = 1 ]; then
-    hostbot+=(SF64_REPLAY_PLAY=$PWD/../tools/net/vs-host.txt SF64_NET_BOT_FROM=${BOT_FROM:-1500})
+    hostbot+=(SF64_REPLAY_PLAY=${VS_HOST_SCRIPT:-$PWD/../tools/net/vs-host.txt} SF64_NET_BOT_FROM=${BOT_FROM:-1500})
     guestbot+=(SF64_REPLAY_PLAY=$PWD/../tools/net/vs-guest.txt SF64_NET_BOT_FROM=${BOT_FROM:-1500})
 fi
 spid=

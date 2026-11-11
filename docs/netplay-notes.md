@@ -158,3 +158,6 @@ Verified only that it builds and boots to the title. NOT yet: input record/play,
   identical, 9-108 rollbacks (max depth 4), 1.6 s stalls (mostly the lockstep menus); lockstep on the same link: 1.6 s
   stalls at delay 4. At 30 ticks/s lockstep already hides this link; rollback pays off on spikes and in letting the
   delay stay low (try SF64_NET_DELAY=1 on a real link).
+- Other Versus modes (2026-11-11): `VS=1 VS_HOST_SCRIPT=tools/net/vs-host-battle.txt` (Battle Royal) and
+  `vs-host-time.txt` (Time Trial), 5400 ticks each over 30+10 ms: no crash, IN SYNC, every final hash identical
+  (~4100-4200 ticks of a match each). Not yet: other stages (the stage select's default was used), 30+ minute runs.

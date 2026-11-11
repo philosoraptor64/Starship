@@ -166,22 +166,22 @@ list(FILTER ALL_FILES EXCLUDE REGEX "src/sys/sys_fault.c")
 list(FILTER ALL_FILES EXCLUDE REGEX "src/mods/object_ram.c")
 
 if (CMAKE_SYSTEM_NAME STREQUAL "iOS")
-    set(IOS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/libultraship/ios)
-
-    set(STORYBOARD_FILE ${IOS_DIR}/Launch.storyboard)
-    set(IMAGE_FILES ${IOS_DIR}/PoweredBy.png)
-    set(ICON_FILES ${IOS_DIR}/Icon.png)
-
-    list(APPEND ALL_FILES ${STORYBOARD_FILE} ${IMAGE_FILES} ${ICON_FILES})
+    # @port: the iOS files the old libultraship path pointed at never existed; ours are in ios/ (launch screen from
+    # the plist, UIScene manifest for the patched SDL, controllers, Files-app Documents, local network)
+    set(IOS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/ios)
+    set(ICON_FILES ${CMAKE_CURRENT_SOURCE_DIR}/logo.png)
+    list(APPEND ALL_FILES ${ICON_FILES})
 
     add_executable(${PROJECT_NAME} ${ALL_FILES})
-    set_xcode_property(${PROJECT_NAME} PRODUCT_BUNDLE_IDENTIFIER ${PROJECT_ID} All)
     set_target_properties(
         ${PROJECT_NAME}
         PROPERTIES
         MACOSX_BUNDLE TRUE
         MACOSX_BUNDLE_INFO_PLIST ${IOS_DIR}/plist.in
-        RESOURCE "${IMAGE_FILES};${STORYBOARD_FILE};${ICON_FILES}"
+        MACOSX_BUNDLE_GUI_IDENTIFIER io.github.philosoraptor.starship
+        MACOSX_BUNDLE_SHORT_VERSION_STRING 1.0
+        MACOSX_BUNDLE_BUNDLE_VERSION 1
+        RESOURCE "${ICON_FILES}"
     )
 else()
     add_executable(${PROJECT_NAME} ${ALL_FILES})
