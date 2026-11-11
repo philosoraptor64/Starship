@@ -58,7 +58,9 @@ Verified only that it builds and boots to the title. NOT yet: input record/play,
   double-clicking build-cmake/Starship in Finder starts in ~ and asks for a ROM because it can't find sf64.o2r).
 - Xbox controller: C buttons were only on the right stick / triggers / B / Y; the user wanted them on the D-pad. Done in the
   user's local config only (build-cmake/starship.cfg.json, backup .bak-before-dpad): SDL buttons 11-14 added to C-Up/Down/
-  Left/Right. TODO: make it the default mapping for Xbox-style pads (i64 module / iOS too).
+  Left/Right. **Now the default** (2026-11-11, Studio, src/port/Engine.cpp SDLButtonToButtonMappings: D-pad also on
+  C-Up/Down/Left/Right, the existing Y/B/trigger/right-stick C mappings kept). Defaults only apply to a controller with
+  no saved mapping (new installs, i64 module, iOS); existing configs keep theirs. Not yet tested with a pad.
 - VS mode didn't start with one controller (it needs a second plugged pad for player 2): netplay must make the remote
   player's port read as plugged (gControllerPlugged / osContGetStatus in Controller_UpdateInput, sys_joybus.c).
 

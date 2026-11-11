@@ -139,8 +139,11 @@ GameEngine::GameEngine() {
             { BTN_A, { SDL_CONTROLLER_BUTTON_A } },
             { BTN_B, { SDL_CONTROLLER_BUTTON_X } },
             { BTN_START, { SDL_CONTROLLER_BUTTON_START } },
-            { BTN_CLEFT, { SDL_CONTROLLER_BUTTON_Y } },
-            { BTN_CDOWN, { SDL_CONTROLLER_BUTTON_B } },
+            // The right stick aims, so the C buttons also sit on the D-pad (user's choice, 2026-11-10).
+            { BTN_CLEFT, { SDL_CONTROLLER_BUTTON_Y, SDL_CONTROLLER_BUTTON_DPAD_LEFT } },
+            { BTN_CDOWN, { SDL_CONTROLLER_BUTTON_B, SDL_CONTROLLER_BUTTON_DPAD_DOWN } },
+            { BTN_CUP, { SDL_CONTROLLER_BUTTON_DPAD_UP } },
+            { BTN_CRIGHT, { SDL_CONTROLLER_BUTTON_DPAD_RIGHT } },
             { BTN_DUP, { SDL_CONTROLLER_BUTTON_DPAD_UP } },
             { BTN_DDOWN, { SDL_CONTROLLER_BUTTON_DPAD_DOWN } },
             { BTN_DLEFT, { SDL_CONTROLLER_BUTTON_DPAD_LEFT } },
