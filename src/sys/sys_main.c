@@ -2,6 +2,7 @@
 #include "port/SnapshotSection.h"
 #include "port/ReplayCheck.h"
 #include "port/Rollback.h"
+#include "port/SfNet.h"
 #include "sf64audio_external.h"
 
 #include <functions.h>
@@ -264,6 +265,12 @@ void Graphics_ThreadUpdate() {
         return;
     }
 
+    if (SfNet_TimeSyncSkip()) {
+        // @port: netplay time sync: this side is ahead, show the last frame again and let the other catch up
+        Graphics_PushFrame(gGfxPool->masterDL);
+        Audio_Update();
+        return;
+    }
     Main_LogicTick(false);
     Rollback_AfterTick(); // @port: netplay rollback point / SyncTest (the state = before the next tick)
     Graphics_SetTask();

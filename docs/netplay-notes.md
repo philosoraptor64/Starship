@@ -143,3 +143,18 @@ Verified only that it builds and boots to the title. NOT yet: input record/play,
   other player quit). Fixes found by the full compare: rumble flags (resim must still clear them), the plugged
   controllers changing when going offline (now `SfNet_InSession`). Also fixed: online, this machine's own pad
   rumbles for its own pilot only (it rumbled for player 1 on both).
+
+## Rollback netplay (2026-11-11, Studio)
+- SfNet rollback driver (default where snapshots work; `SF64_NET_ROLLBACK=0` = lockstep): n64net_rollback_frame at
+  the rollback point after each tick (save/load = Snapshot slots, advance = Main_LogicTick(true)); window open only
+  after `SF64_NET_ROLLBACK_FROM` (30) ticks of rollback-safe state (Versus gameplay), window 8
+  (`SF64_NET_ROLLBACK_WINDOW`); leaving it (state change pending) settles all predictions first. Sync checks only on
+  confirmed ticks. Time sync: the side ahead skips a tick (sys_main.c: shows the last frame again).
+  Auto delay ceiling 3 with rollback, 6 lockstep.
+- The replay hash log now writes a tick's line once it is final (inputs confirmed): the per-tick comparison in the
+  pair test stays exact with rollback.
+- Simulated link: `SF64_NET_SIM_LATENCY/JITTER/LOSS` (pair test LATENCY/JITTER/LOSS).
+- Results, Versus 3600 ticks over 40 ms + 20 ms jitter + 5% loss: rollback IN SYNC, every final per-tick hash
+  identical, 9-108 rollbacks (max depth 4), 1.6 s stalls (mostly the lockstep menus); lockstep on the same link: 1.6 s
+  stalls at delay 4. At 30 ticks/s lockstep already hides this link; rollback pays off on spikes and in letting the
+  delay stay low (try SF64_NET_DELAY=1 on a real link).

@@ -5,14 +5,17 @@
 #        DESYNC_TEST=tick (the guest's RNG is nudged: must report DESYNC); SERVER=local [ROOM=SFTS] [RELAY=1];
 #        EXTERNAL=1 = the connection belongs to a stand-in for i64; GUEST_FRAMES=n = the guest quits early;
 #        VS=1 = scripted menus into a 2-player Versus match, bots fly from BOT_FROM=1500;
-#        SYNCTEST=n = both sides rewind n ticks every tick in Versus gameplay and check the resimulation)
+#        SYNCTEST=n = both sides rewind n ticks every tick in Versus gameplay and check the resimulation;
+#        ROLLBACK=0 = lockstep everywhere; LATENCY/JITTER (ms) LOSS (%) = simulated bad link)
 set -uo pipefail
 cd "$(dirname "$0")/../../build-cmake"
 FRAMES=${FRAMES:-1801}; SEED=${SEED:-7}; DELAY=${DELAY:-2}; HOST_BOT=${HOST_BOT:-5}; GUEST_BOT=${GUEST_BOT:-105}
 out=net-test/$(date +%Y%m%d-%H%M%S); mkdir -p "$out"
 common=(SDL_AUDIODRIVER=dummy SDL_MAC_BACKGROUND_APP=1 SDL_WINDOW_NO_ACTIVATION_WHEN_SHOWN=1 SF64_SEED=$SEED
         SF64_REPLAY_FRAMES=$FRAMES SF64_NET_DELAY=$DELAY SF64_NET_WAIT_SECS=${WAIT_SECS:-60}
-        ${SYNCTEST:+SF64_SYNCTEST=$SYNCTEST} ${SYNCTEST_FULL:+SF64_SYNCTEST_FULL=1})
+        ${SYNCTEST:+SF64_SYNCTEST=$SYNCTEST} ${SYNCTEST_FULL:+SF64_SYNCTEST_FULL=1}
+        SF64_NET_ROLLBACK=${ROLLBACK:-1} SF64_NET_SIM_LATENCY=${LATENCY:-0} SF64_NET_SIM_JITTER=${JITTER:-0}
+        SF64_NET_SIM_LOSS=${LOSS:-0})
 hostbot=(); [ "$HOST_BOT" != 0 ] && hostbot=(SF64_NET_BOT=$HOST_BOT)
 guestbot=(); [ "$GUEST_BOT" != 0 ] && guestbot=(SF64_NET_BOT=$GUEST_BOT)
 # VS=1: scripted menus into a 2-player Versus Point Match (tools/net/vs-*.txt), then the bots fly from BOT_FROM
@@ -52,7 +55,9 @@ for side in host guest; do
     if ! grep -q 'SfNet: connected\|SfNet: running' "$out/$side.log"; then echo "RESULT: FAILED ($side never connected)"; exit 1; fi
 done
 if grep -q DESYNC "$out/host.log" "$out/guest.log"; then echo "RESULT: DESYNC"; exit 1; fi
-n=$(wc -l < "$out/guest.hash"); same=$(head -n "$n" "$out/host.hash" | cmp -s - "$out/guest.hash" && echo yes || echo no)
+# (with rollback each side writes a tick's line once its inputs are confirmed: compare the common part)
+hn=$(wc -l < "$out/host.hash"); gn=$(wc -l < "$out/guest.hash"); n=$(( hn < gn ? hn : gn ))
+same=$(cmp -s <(head -n "$n" "$out/host.hash") <(head -n "$n" "$out/guest.hash") && echo yes || echo no)
 echo "per-tick state hashes over $n ticks identical: $same"
 awk '$3==7' "$out/host.hash" | wc -l | xargs echo "gameplay ticks:"
 echo "RESULT: IN SYNC (logs in build-cmake/$out)"

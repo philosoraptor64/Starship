@@ -19,6 +19,11 @@ static int sTick = 0; // logic ticks since boot
 static int sMaxTicks = -1;
 static FILE* sHashLog = NULL;
 static FILE* sRecord = NULL;
+/* the hash log is written once a tick is final: at once, or (rollback) when its inputs are confirmed */
+#define LINE_RING 256
+static char sLines[LINE_RING][160];
+static int sLineTick[LINE_RING];
+static int sWritten = -1;
 #define REPLAY_PADS 4
 typedef struct {
     u16 button;
@@ -250,6 +255,21 @@ static unsigned long long HashState(int* numObjs) {
     return h;
 }
 
+void ReplayCheck_TickFinal(int tick) {
+    int t;
+    if (!sHashLog) {
+        return;
+    }
+    for (t = sWritten + 1; t <= tick; t++) {
+        if (sLineTick[t % LINE_RING] == t) {
+            fputs(sLines[t % LINE_RING], sHashLog);
+        }
+    }
+    if (tick > sWritten) {
+        sWritten = tick;
+    }
+}
+
 unsigned long long ReplayCheck_StateHash(void) {
     int n;
     return HashState(&n);
@@ -284,8 +304,16 @@ void ReplayCheck_EndTick(void) {
         sLogoWaitTicks = 0;
     }
 
+    if (sHashLog) {
+        int n;
+        unsigned long long h = HashState(&n);
+        snprintf(sLines[sTick % LINE_RING], sizeof(sLines[0]), "%d state %d frame %d objs %d rng %d %d %d hash %016llx\n",
+                 sTick, gGameState, gGameFrameCount, n, sRandSeed1, sRandSeed2, sRandSeed3, h);
+        sLineTick[sTick % LINE_RING] = sTick;
+    }
+
     if (gRollbackResim) {
-        sTick++; /* resimulated tick: no logs, no quitting */
+        sTick++; /* resimulated tick: no netplay, no quitting */
         return;
     }
 
@@ -294,11 +322,8 @@ void ReplayCheck_EndTick(void) {
         SfNet_EndTick(sTick, HashState(&n));
     }
 
-    if (sHashLog) {
-        int n;
-        unsigned long long h = HashState(&n);
-        fprintf(sHashLog, "%d state %d frame %d objs %d rng %d %d %d hash %016llx\n", sTick, gGameState, gGameFrameCount, n,
-                sRandSeed1, sRandSeed2, sRandSeed3, h);
+    if (!SfNet_RollbackActive()) {
+        ReplayCheck_TickFinal(sTick);
     }
 
     sTick++;

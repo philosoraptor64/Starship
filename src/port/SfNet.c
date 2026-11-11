@@ -14,6 +14,7 @@
 #include "ReplayCheck.h"
 #include "SfNet.h"
 #include "Rollback.h"
+#include "Snapshot.h"
 #include "n64net_input.h"
 #include "n64net_rendezvous.h"
 #include "sfnet_build_id.h"
@@ -62,6 +63,30 @@ static int sHaveHostSave = 0;
 
 static int (*sExtSend)(const void* data, unsigned size) = NULL;
 static int (*sExtRecv)(void* buf, unsigned cap) = NULL;
+
+/* rollback (SF64_NET_ROLLBACK, default on where snapshots work; inside Versus gameplay only, lockstep elsewhere) */
+#define SFNET_SLOTS 16
+#define SFNET_HASH_RING 64
+static int sRollback = 0;
+static unsigned sRollbackWindow = 8;
+static int sRollbackFrom = 30; /* ticks of rollback-safe state before the window opens */
+static int sWindowOpen = 0;
+static int sSafeSince = -1;
+static unsigned long long sTickHash[SFNET_HASH_RING];
+static int sTickHashValid[SFNET_HASH_RING];
+static int sLastSyncRecorded = -1;
+static unsigned sRollbacks = 0, sRollbackTicks = 0, sMaxDepth = 0, sSkips = 0;
+
+/* test aid: a simulated bad link on sent packets (SF64_NET_SIM_LATENCY/JITTER ms, SF64_NET_SIM_LOSS %) */
+#define SIM_QUEUE 1024
+typedef struct {
+    unsigned long long at;
+    unsigned size;
+    u8 data[1500];
+} SimPacket;
+static SimPacket* sSimQueue = NULL;
+static int sSimHead = 0, sSimCount = 0;
+static unsigned sSimLatency = 0, sSimJitter = 0, sSimLoss = 0, sSimRand = 12345;
 
 static const char* EnvStr(const char* name) {
     const char* v = getenv(name);
@@ -114,9 +139,47 @@ static void RawSend(const void* data, unsigned size) {
     }
 }
 
+static unsigned SimRand(void) {
+    sSimRand = sSimRand * 1103515245u + 12345u;
+    return sSimRand >> 8;
+}
+
+static void SimFlush(void) {
+    unsigned long long now = NowUsecs();
+    int i;
+    for (i = 0; i < sSimCount;) {
+        SimPacket* p = &sSimQueue[(sSimHead + i) % SIM_QUEUE];
+        if (p->at <= now) {
+            RawSend(p->data, p->size);
+            *p = sSimQueue[sSimHead];
+            sSimHead = (sSimHead + 1) % SIM_QUEUE;
+            sSimCount--;
+        } else {
+            i++;
+        }
+    }
+}
+
 static void NetSend(void* user, const uint8_t* data, uint32_t size) {
+    SimPacket* p;
     (void) user;
-    RawSend(data, size);
+    if (!sSimQueue) {
+        RawSend(data, size);
+        return;
+    }
+    if (sSimLoss && SimRand() % 100 < sSimLoss) {
+        return;
+    }
+    if (sSimCount >= SIM_QUEUE || size > sizeof(p->data)) {
+        RawSend(data, size);
+        return;
+    }
+    p = &sSimQueue[(sSimHead + sSimCount) % SIM_QUEUE];
+    p->at = NowUsecs() + (unsigned long long) sSimLatency * 1000 +
+            (sSimJitter ? (unsigned long long) (SimRand() % (sSimJitter * 1000)) : 0);
+    p->size = size;
+    memcpy(p->data, data, size);
+    sSimCount++;
 }
 
 static void SendHandshake(u8 type) {
@@ -147,6 +210,9 @@ static void SendSave(u8 kind) {
 static int Poll(void) {
     int started = 0;
     u8 buf[1500];
+    if (sSimCount) {
+        SimFlush();
+    }
     for (;;) {
         struct sockaddr_in from;
         socklen_t fromlen = sizeof(from);
@@ -240,7 +306,7 @@ static void CreateNet(void) {
     cfg.send = NetSend;
     cfg.log = NetLogCb;
     sNet = n64net_input_create(&cfg);
-    n64net_input_set_auto_delay(sNet, cfg.input_delay, 6);
+    n64net_input_set_auto_delay(sNet, cfg.input_delay, sRollback ? 3 : 6);
 }
 
 /* Waits for the host's save (guest) */
@@ -266,7 +332,11 @@ static int GetHostSave(void) {
 static void Activate(void) {
     sActive = 1;
     sLastTick = -1;
-    NetLog("connected as player %d (lockstep, input delay %u, build %s, seed %llu)", sIsHost ? 1 : 2,
+    if (sRollback) {
+        Snapshot_Init(SFNET_SLOTS);
+    }
+    NetLog("connected as player %d (%s, input delay %u, build %s, seed %llu)", sIsHost ? 1 : 2,
+           sRollback ? "rollback in Versus" : "lockstep",
            n64net_input_get_delay(sNet), SFNET_BUILD_ID, sSeed);
 }
 
@@ -370,6 +440,17 @@ static void ReadEnvCommon(void) {
     if ((s = EnvStr("SF64_NET_BOT_FROM"))) sBotFrom = atoi(s);
     if ((s = EnvStr("SF64_NET_WAIT_SECS"))) sWaitSecs = atoi(s);
     if ((s = EnvStr("SF64_NET_DROP_SECS"))) sDropSecs = atoi(s) > 0 ? atoi(s) : 20;
+    sRollback = !(EnvStr("SF64_NET_ROLLBACK") && atoi(EnvStr("SF64_NET_ROLLBACK")) == 0) && Snapshot_Supported();
+    if ((s = EnvStr("SF64_NET_ROLLBACK_WINDOW"))) sRollbackWindow = (unsigned) atoi(s);
+    if ((s = EnvStr("SF64_NET_ROLLBACK_FROM"))) sRollbackFrom = atoi(s);
+    if ((s = EnvStr("SF64_NET_SIM_LATENCY"))) sSimLatency = (unsigned) atoi(s);
+    if ((s = EnvStr("SF64_NET_SIM_JITTER"))) sSimJitter = (unsigned) atoi(s);
+    if ((s = EnvStr("SF64_NET_SIM_LOSS"))) sSimLoss = (unsigned) atoi(s);
+    if ((sSimLatency || sSimJitter || sSimLoss) && !sSimQueue) {
+        sSimQueue = calloc(SIM_QUEUE, sizeof(SimPacket));
+        sSimRand ^= (unsigned) getpid();
+        NetLog("simulating %u ms + %u ms jitter, %u%% loss on sent packets", sSimLatency, sSimJitter, sSimLoss);
+    }
 }
 
 /* test aid SF64_NET_EXTERNAL_TEST=1: stands in for i64 (SfNet_InitExternal) with a plain UDP socket as the game
@@ -674,7 +755,8 @@ void SfNet_EndTick(int tick, unsigned long long hash) {
             NetLog("test desync injected at tick %d", tick);
         }
     }
-    if (tick % SFNET_SYNC_EVERY == 0) {
+    /* every tick is confirmed in lockstep; with rollback the rollback point records confirmed ticks */
+    if (!sRollback && tick % SFNET_SYNC_EVERY == 0) {
         n64net_sync_record(sNet, (u32) tick, 0, (u32) (hash ^ (hash >> 32)));
     }
     if (!sDesyncReported && n64net_sync_desynced(sNet, &dtick, &dkind)) {
@@ -684,9 +766,11 @@ void SfNet_EndTick(int tick, unsigned long long hash) {
     if (tick % SFNET_STATS_EVERY == 0 && tick > 0) {
         n64net_input_stats st;
         n64net_input_get_stats(sNet, &st);
-        NetLog("tick %d, sync checks matched %u%s, stalls %u (%.2f s), delay %u, rtt avg %u ms max %u ms", tick,
+        NetLog("tick %d, sync checks matched %u%s, stalls %u (%.2f s), delay %u, rtt avg %u ms max %u ms, "
+               "rollbacks %u (%u ticks, max %u), skips %u, save %.2f ms", tick,
                n64net_sync_matched(sNet), sDesyncReported ? " (DESYNC)" : "", sStalls, (double) sStallUsecs / 1e6,
-               n64net_input_get_delay(sNet), st.rtt_avg_usecs / 1000, st.rtt_max_usecs / 1000);
+               n64net_input_get_delay(sNet), st.rtt_avg_usecs / 1000, st.rtt_max_usecs / 1000, sRollbacks,
+               sRollbackTicks, sMaxDepth, sSkips, Snapshot_LastSaveMs());
     }
 }
 
@@ -720,10 +804,118 @@ int SfNet_FullView(int camCount) {
     return camCount == 4 && sActive && !split; /* stays after a disconnect: the view doesn't jump */
 }
 
-/* rollback netplay: not yet (lockstep); see Rollback.c */
+/* ------------------------------------------------------------------ rollback */
+
 int SfNet_RollbackActive(void) {
-    return 0;
+    return sActive && !sOffline && sRollback;
+}
+
+static void CbSave(void* user, uint32_t slot) {
+    (void) user;
+    Snapshot_Save((int) slot);
+}
+
+static void CbLoad(void* user, uint32_t slot) {
+    (void) user;
+    Snapshot_Load((int) slot);
+    ReplayCheck_SetTick((int) n64net_rollback_callback_tick(sNet)); /* the state before that tick */
+}
+
+static void CbAdvance(void* user) {
+    int t;
+    (void) user;
+    Rollback_Step();
+    t = ReplayCheck_GetTick();
+    sTickHash[t % SFNET_HASH_RING] = ReplayCheck_StateHash();
+    sTickHashValid[t % SFNET_HASH_RING] = t;
+}
+
+/* all inputs up to tick - 1 confirmed (the ones the current state was built from) */
+static void WaitConfirmed(int tick) {
+    while (tick > 0 && !sOffline) {
+        uint32_t c = n64net_input_confirmed_tick(sNet);
+        if (c != UINT32_MAX && (int) c >= tick - 1) {
+            break;
+        }
+        Poll();
+        n64net_input_resend(sNet);
+        if (PeerGone()) {
+            GoOffline();
+        }
+        usleep(250);
+    }
 }
 
 void SfNet_RollbackPoint(void) {
+    const int tick = ReplayCheck_GetTick(); /* the state now = before tick `tick` */
+    const int safe = Rollback_Safe();
+    int want, closing = 0, depth, t;
+    n64net_rollback_callbacks cb;
+    uint32_t confirmed;
+
+    if (!safe) {
+        sSafeSince = -1;
+    } else if (sSafeSince < 0) {
+        sSafeSince = tick;
+    }
+    want = safe && tick >= sSafeSince + sRollbackFrom;
+    if (sWindowOpen && !want) {
+        /* leaving rollback-safe play (a state change is pending): settle every prediction first; the correction
+         * below may even cancel the change */
+        WaitConfirmed(tick);
+        closing = 1;
+    } else if (!sWindowOpen && want) {
+        n64net_input_set_window(sNet, sRollbackWindow);
+        sWindowOpen = 1;
+    }
+
+    memset(&cb, 0, sizeof(cb));
+    cb.save = CbSave;
+    cb.load = CbLoad;
+    cb.advance = CbAdvance;
+    cb.slot_count = SFNET_SLOTS;
+    gRollbackResim = 1;
+    depth = n64net_rollback_frame(sNet, (uint32_t) tick, &cb);
+    gRollbackResim = 0;
+
+    if (closing) {
+        n64net_input_set_window(sNet, 0);
+        sWindowOpen = 0;
+    }
+    if (depth > 0) {
+        sRollbacks++;
+        sRollbackTicks += (unsigned) depth;
+        if ((unsigned) depth > sMaxDepth) sMaxDepth = (unsigned) depth;
+    } else if (depth < 0) {
+        NetLog("rollback needed a state older than the snapshot ring");
+    }
+
+    sTickHash[tick % SFNET_HASH_RING] = ReplayCheck_StateHash();
+    sTickHashValid[tick % SFNET_HASH_RING] = tick;
+
+    /* sync checks on confirmed states: the state before tick t is final once inputs up to t - 1 are confirmed */
+    confirmed = n64net_input_confirmed_tick(sNet);
+    if (confirmed != UINT32_MAX) {
+        /* the state after tick c is final once inputs up to c are confirmed */
+        ReplayCheck_TickFinal((int) confirmed < tick - 1 ? (int) confirmed : tick - 1);
+        for (t = sLastSyncRecorded + 1; t <= (int) confirmed + 1 && t <= tick; t++) {
+            if (t % SFNET_SYNC_EVERY == 0 && sTickHashValid[t % SFNET_HASH_RING] == t) {
+                unsigned long long h = sTickHash[t % SFNET_HASH_RING];
+                n64net_sync_record(sNet, (u32) t, 0, (u32) (h ^ (h >> 32)));
+            }
+            sLastSyncRecorded = t;
+        }
+    }
+}
+
+int SfNet_TimeSyncSkip(void) {
+    if (!sActive || sOffline || !sRollback || !sWindowOpen) {
+        return 0;
+    }
+    Poll();
+    if (n64net_timesync_should_skip(sNet)) {
+        sSkips++;
+        return 1;
+    }
+    return 0;
 }

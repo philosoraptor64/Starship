@@ -28,6 +28,8 @@ void ReplayCheck_BotPad(int tick, unsigned seed, OSContPad* pad);
 /* the replay/sync state hash; logic ticks since boot (rollback rewinds it) */
 unsigned long long ReplayCheck_StateHash(void);
 int ReplayCheck_GetTick(void);
+/* the states after ticks up to `tick` are final (inputs confirmed): write their hash log lines */
+void ReplayCheck_TickFinal(int tick);
 void ReplayCheck_SetTick(int tick);
 /* after Game_Update */
 void ReplayCheck_EndTick(void);

@@ -41,6 +41,8 @@ void SfNet_Shutdown(void);
 /* rollback netplay (online Versus): the rollback point after each tick */
 int SfNet_RollbackActive(void);
 void SfNet_RollbackPoint(void);
+/* once per frame before the tick: 1 = this side is ahead, skip this frame's tick (time sync) */
+int SfNet_TimeSyncSkip(void);
 
 /* A host app (i64) owns the connection and starts the game fresh on every machine. */
 typedef struct SfNetExternal {
