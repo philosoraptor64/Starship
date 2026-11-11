@@ -187,3 +187,12 @@ cmake --build build-iossim --target Starship
 - **Soak (2026-11-11):** `VS=1 FRAMES=18001 LATENCY=60 JITTER=30 LOSS=3`: 10 minutes, 16678 ticks of Versus, rtt ~213
   ms, 671 rollbacks (max depth 5), 600/600 sync checks, every final per-tick hash identical, no crash; stalls 9.2 s
   (spikes past the 8-tick window).
+- **iOS Simulator build WORKS (2026-11-11):** besides the fixes above: Starship's own top-level `set(PLATFORM "OS64")` is
+  overridable too, libultraship (82dddf7e) no longer calls the macOS fullscreen helpers on iOS (the window always
+  fills the scene). A configure switched from device to simulator keeps old flags in the cache: configure a fresh
+  build folder (reuse fetched sources with `-DFETCHCONTENT_SOURCE_DIR_<NAME>=...`). The app needs sf64.o2r and
+  starship.o2r in its Documents (extracted on the Mac); it boots to the title intro.
+- `tools/net/sim-test.sh` (Mac host vs simulator guest, guest settings via Documents/netplay.cfg, both per-tick hash
+  logs compared): `VS=1 FRAMES=3001` = rollback Versus, IN SYNC, **every tick identical between the Mac and iOS**.
+- Device build (to do on the MacBook: signing): same as the simulator command with `-DPLATFORM=OS64`, an iOS-device SDL
+  with the UIScene patch, then sign like perfect_dark (stub profile, codesign) and copy the .o2r files into Documents.

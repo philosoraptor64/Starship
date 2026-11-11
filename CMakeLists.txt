@@ -56,7 +56,9 @@ set(CPP "${CMAKE_C_COMPILER}" "-E" "-P" "-Wno-trigraphs" "-x" "c")
 endif()
 
 if(IOS)
-set(PLATFORM "OS64")
+if(NOT PLATFORM)
+    set(PLATFORM "OS64") # @port: -DPLATFORM=SIMULATORARM64 for the iOS Simulator
+endif()
 include(cmake/ios.toolchain.cmake)
 add_compile_definitions(
     PLATFORM_IOS=1
