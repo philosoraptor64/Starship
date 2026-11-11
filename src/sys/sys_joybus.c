@@ -62,7 +62,8 @@ void Controller_Init(void) {
 }
 
 // LTODO: Fix this
-#define osContGetStatus(x) true
+// (online: exactly the two players' controllers are plugged, so Versus has two pilots)
+#define osContGetStatus(x) (SfNet_Active() ? ((x) < 2) : true)
 
 void Controller_UpdateInput(void) {
     s32 i;

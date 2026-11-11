@@ -3,7 +3,8 @@
 # the sync checks and both sides' per-tick state hashes are compared.
 # Usage: tools/net/pair-test.sh  (env: FRAMES=1801 SEED=7 DELAY=2 HOST_BOT=5 GUEST_BOT=105 (0 = play it yourself);
 #        DESYNC_TEST=tick (the guest's RNG is nudged: must report DESYNC); SERVER=local [ROOM=SFTS] [RELAY=1];
-#        EXTERNAL=1 = the connection belongs to a stand-in for i64; GUEST_FRAMES=n = the guest quits early)
+#        EXTERNAL=1 = the connection belongs to a stand-in for i64; GUEST_FRAMES=n = the guest quits early;
+#        VS=1 = scripted menus into a 2-player Versus match, bots fly from BOT_FROM=1500)
 set -uo pipefail
 cd "$(dirname "$0")/../../build-cmake"
 FRAMES=${FRAMES:-1801}; SEED=${SEED:-7}; DELAY=${DELAY:-2}; HOST_BOT=${HOST_BOT:-5}; GUEST_BOT=${GUEST_BOT:-105}
@@ -12,6 +13,11 @@ common=(SDL_AUDIODRIVER=dummy SDL_MAC_BACKGROUND_APP=1 SDL_WINDOW_NO_ACTIVATION_
         SF64_REPLAY_FRAMES=$FRAMES SF64_NET_DELAY=$DELAY SF64_NET_WAIT_SECS=${WAIT_SECS:-60})
 hostbot=(); [ "$HOST_BOT" != 0 ] && hostbot=(SF64_NET_BOT=$HOST_BOT)
 guestbot=(); [ "$GUEST_BOT" != 0 ] && guestbot=(SF64_NET_BOT=$GUEST_BOT)
+# VS=1: scripted menus into a 2-player Versus Point Match (tools/net/vs-*.txt), then the bots fly from BOT_FROM
+if [ "${VS:-0}" = 1 ]; then
+    hostbot+=(SF64_REPLAY_PLAY=$PWD/../tools/net/vs-host.txt SF64_NET_BOT_FROM=${BOT_FROM:-1500})
+    guestbot+=(SF64_REPLAY_PLAY=$PWD/../tools/net/vs-guest.txt SF64_NET_BOT_FROM=${BOT_FROM:-1500})
+fi
 spid=
 if [ "${EXTERNAL:-0}" = 1 ]; then
     hostnet=(SF64_NET_EXTERNAL_TEST=1 SF64_NET_EXTERNAL_BLOB=$PWD/$out/blob.bin)

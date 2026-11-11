@@ -99,3 +99,15 @@ Verified only that it builds and boots to the title. NOT yet: input record/play,
 - NEXT: Versus with both players (menu path to VS for the bots; check that P2's input drives P2), rollback
   (snapshots like perfect_dark: section pragma for the game's C globals + whatever heaps the game uses; Starship
   has C++ port code, check the state there), time sync, iOS build, then the i64 module (MacBook agent).
+- **Versus online works (2026-11-11):** upstream disabled VS (`DEBUG_VERSUS 0`, commit 18631e72 "disable versus mode
+  for now"); our fork sets `DEBUG_VERSUS 1` (include/mods.h). Online exactly controllers 1-2 count as plugged
+  (sys_joybus.c osContGetStatus), so the handicap screen needs only the two players' A (offline every port counts as
+  plugged and ports 3-4 can never confirm: that was the "VS needs a second pad" report). `VS=1 tools/net/pair-test.sh`:
+  scripted menus (tools/net/vs-host.txt / vs-guest.txt: title Start x2, down x2, VS, Point Match, both confirm, stage)
+  then both bots fly (SF64_NET_BOT_FROM=1500): VS_INIT -> 2281 ticks of a 2-player Point Match on Corneria, every
+  per-tick hash identical; screenshots: both windows show the same 4-way split (Fox + Peppy flying, 2 spectator
+  "Camera" quarters). Debug: SF64_NET_TRACE=from:to logs local/used pads. Bug fixed on the way: the netplay pad
+  filter ran before a played-back script's pads were applied.
+- NEXT for Star Fox: one full-screen view per device in VS (each player sees their own quarter full screen; like
+  perfect_dark's full views, check what the camera/HUD do), rollback, iOS build + simulator test, i64 module.
+  Why upstream disabled VS is unknown: watch for crashes in longer VS sessions (Battle Royal, Time Trial, other stages).

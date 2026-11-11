@@ -163,7 +163,6 @@ void ReplayCheck_FilterPads(OSContPad* pads) {
             ReplayCheck_BotPad(sTick, sBotSeed[i], &pads[i]);
         }
     }
-    SfNet_FilterPads(pads, sTick);
     if (sPlay) {
         for (i = 0; i < REPLAY_PADS; i++) {
             ReplayPad* r = sTick < sPlayCount ? &sPlay[sTick][i] : NULL;
@@ -175,6 +174,7 @@ void ReplayCheck_FilterPads(OSContPad* pads) {
             pads[i].err_no = r ? r->err : 0;
             pads[i].gyro_x = pads[i].gyro_y = 0;
         }
+        SfNet_FilterPads(pads, sTick); /* online: the played pad 1 is this machine's player */
         return;
     }
     for (i = 0; i < REPLAY_PADS; i++) {
@@ -188,6 +188,7 @@ void ReplayCheck_FilterPads(OSContPad* pads) {
         }
         fputc('\n', sRecord);
     }
+    SfNet_FilterPads(pads, sTick); /* online: pad 1 (after the bot) is this machine's player */
 }
 
 /* FNV-1a 64 */

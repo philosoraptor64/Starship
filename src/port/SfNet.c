@@ -41,6 +41,7 @@ static n64net_input* sNet = NULL;
 static unsigned long long sSeed = 1;
 static unsigned long long sConfigHash = 0;
 static unsigned sBotSeed = 0;
+static int sBotFrom = 0; /* SF64_NET_BOT_FROM=tick: the bot takes over from then (scripted menus before) */
 static int sWaitSecs = 60;
 static int sDropSecs = 20;
 static int sPeerLeft = 0;
@@ -363,6 +364,7 @@ static int ConnectSocket(void) {
 static void ReadEnvCommon(void) {
     const char* s;
     if ((s = EnvStr("SF64_NET_BOT"))) sBotSeed = (unsigned) strtoul(s, NULL, 0) | 1;
+    if ((s = EnvStr("SF64_NET_BOT_FROM"))) sBotFrom = atoi(s);
     if ((s = EnvStr("SF64_NET_WAIT_SECS"))) sWaitSecs = atoi(s);
     if ((s = EnvStr("SF64_NET_DROP_SECS"))) sDropSecs = atoi(s) > 0 ? atoi(s) : 20;
 }
@@ -598,7 +600,7 @@ void SfNet_FilterPads(OSContPad* pads, int tick) {
     if (tick != sLastTick) {
         OSContPad local = pads[0]; /* this machine's own controller is always controller 1 */
         int t;
-        if (sBotSeed) {
+        if (sBotSeed && tick >= sBotFrom) {
             ReplayCheck_BotPad(tick, sBotSeed, &local);
         }
         /* ticks in which the game read no pads still get an input (unchanged): the ledgers stay in step */
@@ -606,6 +608,18 @@ void SfNet_FilterPads(OSContPad* pads, int tick) {
             ExchangeTick(t, &local);
         }
         sLastTick = tick;
+    }
+    {
+        static int traceFrom = -2, traceTo = -1;
+        if (traceFrom == -2) {
+            const char* e = EnvStr("SF64_NET_TRACE");
+            traceFrom = -1;
+            if (e) sscanf(e, "%d:%d", &traceFrom, &traceTo);
+        }
+        if (tick >= traceFrom && tick <= traceTo) {
+            NetLog("trace tick %d: local %04x, used P1 %04x P2 %04x", tick, pads[0].button, sTickPads[0].button,
+                   sTickPads[1].button);
+        }
     }
     for (i = 0; i < 4; i++) {
         if (i < 2) {

@@ -97,7 +97,7 @@ void Spawner(void);
 #endif
 
 #define DEBUG_BOSS_KILLER 0
-#define DEBUG_VERSUS 0
+#define DEBUG_VERSUS 1 // philosoraptor64 fork: Versus on (netplay target; upstream disabled it 18631e72)
 
 /*
 
