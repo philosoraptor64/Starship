@@ -217,3 +217,17 @@ cmake --build build-iossim --target Starship
   The radar marks (3D, relative to the viewport) drop the widescreen offset gHudOffsetPers in the full view so they
   stay inside the zoomed window on wide screens (checked in the simulator at the iPhone 17 aspect). Screenshot: radar bottom-left
   with marks inside, shield + portrait + number at the bottom, boost top-right, on both machines. IN SYNC.
+
+## iPhone device (2026-11-12, MacBook)
+- **Signed + installed on the 14 Pro (iPhone15,2) and it boots:** ran 20 s without a crash (nobody to look at the
+  screen; Metal can't be screenshotted). Build: an iOS-device SDL with the UIScene patch built from SpaghettiKart's
+  patched SDL source, installed at ~/Developer/N64/deps-ios/sdl2 (static), then the Studio's `build-ios` configure
+  command (~14 min first time) and `cmake --build build-ios --target Starship`. Signing: stub app
+  io.github.philosoraptor.starship built once with -allowProvisioningUpdates (existing certificate, no new one), its
+  embedded.mobileprovision copied into Starship.app, `codesign --force --deep --sign <cert> --entitlements <stub's>
+  --generate-entitlement-der`. Profile expires ~2026-11-19. sf64.o2r + starship.o2r copied into Documents.
+- No Bluetooth crash (unlike perfect_dark): nothing sets SDL_HINT_JOYSTICK_HIDAPI_STEAM, so SDL never opens CoreBluetooth.
+- Free-profile limit: 3 apps per phone. The Studio's auto-install had put BattleShip back on the 14 Pro; removed again
+  (user's decision 2026-11-10). 14 Pro now: i64, Perfect Dark, Starship.
+- Not yet: Mac <-> phone netplay (the first netplay launch shows iOS's local-network prompt; needs a tap on Allow),
+  playing it with a controller.
