@@ -482,6 +482,44 @@ void GameEngine::AudioExit() {
     audio.thread.join();
 }
 
+// i64 (host-paced: the host calls one frame per display refresh): each host frame presents exactly one
+// picture. The game's logic runs once per gVIsPerFrame refreshes (30 Hz in most of Star Fox) and the
+// frame interpolation makes gVIsPerFrame pictures per logic tick; drawing them all in one host frame
+// made that frame wait for two refreshes (30 host frames/s on the iPhone) and, where the device kept
+// up, ran the logic every host frame (double speed on the Mac). Now the first picture is drawn with
+// the logic tick and the others in the following host frames (GameEngine_HostFrameWithoutLogic).
+static bool sOnePicturePerHostFrame = false;
+static Gfx* sPendingCommands = nullptr;
+static std::vector<std::unordered_map<Mtx*, MtxF>> sPendingPictures;
+static size_t sPendingNext = 0;
+static int sHostFramesLeft = 0;   // host frames still belonging to the last logic tick
+
+extern "C" void GameEngine_SetOnePicturePerHostFrame(bool on) {
+    sOnePicturePerHostFrame = on;
+    sPendingCommands = nullptr;
+    sPendingPictures.clear();
+    sPendingNext = 0;
+    sHostFramesLeft = 0;
+}
+
+// a host frame that belongs to the last logic tick: its next interpolated picture, if any. Returns 0 when
+// it's time for the next logic tick (call push_frame).
+extern "C" int GameEngine_HostFrameWithoutLogic(void) {
+    if (!sOnePicturePerHostFrame || sHostFramesLeft <= 0) {
+        return 0;
+    }
+    sHostFramesLeft--;
+    auto wnd = std::dynamic_pointer_cast<Fast::Fast3dWindow>(Ship::Context::GetInstance()->GetWindow());
+    if (wnd != nullptr && sPendingCommands != nullptr && sPendingNext < sPendingPictures.size()) {
+        auto interpreter = wnd->GetInterpreterWeak().lock().get();
+        wnd->HandleEvents();
+        interpreter->mInterpolationIndex = (int) sPendingNext;
+        wnd->DrawAndRunGraphicsCommands(sPendingCommands, sPendingPictures[sPendingNext]);
+        sPendingNext++;
+    }
+    return 1;
+}
+
 void GameEngine::RunCommands(Gfx* Commands, const std::vector<std::unordered_map<Mtx*, MtxF>>& mtx_replacements) {
     auto wnd = std::dynamic_pointer_cast<Fast::Fast3dWindow>(Ship::Context::GetInstance()->GetWindow());
 
@@ -496,9 +534,20 @@ void GameEngine::RunCommands(Gfx* Commands, const std::vector<std::unordered_map
 
     interpreter->mInterpolationIndex = 0;
 
-    for (const auto& m : mtx_replacements) {
-        wnd->DrawAndRunGraphicsCommands(Commands, m);
-        interpreter->mInterpolationIndex++;
+    if (sOnePicturePerHostFrame) {
+        // this host frame: the first picture; the rest (and empty host frames up to gVIsPerFrame) follow
+        if (!mtx_replacements.empty()) {
+            wnd->DrawAndRunGraphicsCommands(Commands, mtx_replacements[0]);
+        }
+        sPendingCommands = Commands;
+        sPendingPictures.assign(mtx_replacements.begin() + (mtx_replacements.empty() ? 0 : 1), mtx_replacements.end());
+        sPendingNext = 0;
+        sHostFramesLeft = std::max<int>((int) gVIsPerFrame, 1) - 1;
+    } else {
+        for (const auto& m : mtx_replacements) {
+            wnd->DrawAndRunGraphicsCommands(Commands, m);
+            interpreter->mInterpolationIndex++;
+        }
     }
 
     bool curAltAssets = CVarGetInteger("gEnhancements.Mods.AlternateAssets", 0);

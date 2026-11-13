@@ -47,6 +47,8 @@ int Port_RunFrame(void);
 void Port_RunEnd(int fullShutdown);
 void LUS_SetExternalWindow(void* sdlWindow, void** rendererCache);
 void LUS_SetExternalPacing(bool hostPaced);
+void GameEngine_SetOnePicturePerHostFrame(bool on);   // Engine.cpp
+int GameEngine_HostFrameWithoutLogic(void);
 void LUS_SetExternalAudio(bool external);
 /* Game audio goes to the host (Engine.cpp) */
 extern void (*gPortHostAudioWrite)(const int16_t* stereo, uint32_t frames, uint32_t rate);
@@ -405,6 +407,8 @@ extern "C" N64_GAME_EXPORT int n64_game_start(const n64_host* host, const n64_la
     }
     LUS_SetExternalWindow(host->window, &sRenderer);
     LUS_SetExternalPacing((launch->flags & N64_LAUNCH_HOST_PACED) != 0);
+    GameEngine_SetOnePicturePerHostFrame((launch->flags & N64_LAUNCH_HOST_PACED) != 0 &&
+                                         !getenv("SF64_ALL_PICTURES_PER_TICK"));   // test aid: the old way
     gPortHostAudioWrite = host->audio_write;
     gPortHostAudioBuffered = host->audio_buffered;
     LUS_SetExternalAudio(host->audio_write != nullptr);   /* no audio device of our own */
@@ -423,6 +427,12 @@ extern "C" N64_GAME_EXPORT int n64_game_start(const n64_host* host, const n64_la
     return 0;
 }
 
+#include <chrono>
+static uint64_t StatsNowMs() {
+    return (uint64_t) std::chrono::duration_cast<std::chrono::milliseconds>(
+               std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
 extern "C" N64_GAME_EXPORT n64_frame_result n64_game_frame(void) {
     if (!sRunning) {
         return N64_GAME_FRAME_EXIT;
@@ -434,6 +444,22 @@ extern "C" N64_GAME_EXPORT n64_frame_result n64_game_frame(void) {
     if (sPhase == kPhaseExchange) {
         return ExchangeFrame() ? N64_GAME_FRAME_CONTINUE : N64_GAME_FRAME_EXIT;
     }
+    // speed check: logic ticks per host frame (Star Fox's logic is 30 Hz in most scenes)
+    static uint64_t sStatsAt = 0;
+    static unsigned sHostFrames = 0, sLogicTicks = 0;
+    sHostFrames++;
+    if (StatsNowMs() >= sStatsAt) {
+        if (sStatsAt && sHost && sHost->log) {
+            sHost->log("sf64: %u host frames, %u logic ticks in the last 5 s", sHostFrames, sLogicTicks);
+        }
+        sHostFrames = sLogicTicks = 0;
+        sStatsAt = StatsNowMs() + 5000;
+    }
+    // a host frame belonging to the last logic tick (gVIsPerFrame refreshes each): its next picture
+    if (GameEngine_HostFrameWithoutLogic()) {
+        return N64_GAME_FRAME_CONTINUE;
+    }
+    sLogicTicks++;
     return Port_RunFrame() ? N64_GAME_FRAME_CONTINUE : N64_GAME_FRAME_EXIT;
 }
 
@@ -465,6 +491,7 @@ extern "C" N64_GAME_EXPORT void n64_game_stop(void) {
     sNetHost = nullptr;
     LUS_SetExternalWindow(nullptr, nullptr);
     LUS_SetExternalPacing(false);
+    GameEngine_SetOnePicturePerHostFrame(false);
     LUS_SetExternalAudio(false);
     Reentry_RestorePristine();
     sRunning = false;
