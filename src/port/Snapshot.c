@@ -22,6 +22,7 @@ typedef struct {
 typedef struct {
     unsigned char* buf;
     size_t cap, used;
+    int owned; /* buf from malloc (else from the storage block) */
     Range ranges[3];
     int numRanges, valid;
 } Slot;
@@ -30,6 +31,8 @@ static Range sData, sBss;
 static Slot* sSlots = NULL;
 static int sNumSlots = 0;
 static double sSaveMs = 0, sLoadMs = 0;
+static unsigned char* sStore = NULL; /* Snapshot_SetStorage: i64's game memory arena */
+static size_t sStoreSize = 0;
 
 static double NowMs(void) {
     struct timespec ts;
@@ -41,16 +44,52 @@ int Snapshot_Supported(void) {
     return 1;
 }
 
-void Snapshot_Init(int slots) {
+static void FindSections(void) {
     unsigned long size = 0;
     sData.base = getsectiondata(&__dso_handle, SF_SNAPSHOT_SEGMENT, "__data", &size);
     sData.size = sData.base ? size : 0;
     size = 0;
     sBss.base = getsectiondata(&__dso_handle, SF_SNAPSHOT_SEGMENT, "__bss", &size);
     sBss.size = sBss.base ? size : 0;
+}
+
+size_t Snapshot_MaxBytes(void) {
+    FindSections();
+    return sData.size + sBss.size + 1000000 * sizeof(int); /* + all of sMemoryBuffer */
+}
+
+void Snapshot_SetStorage(void* base, size_t size) {
+    sStore = (unsigned char*) base;
+    sStoreSize = base ? size : 0;
+    if (!base) { /* the block goes away (i64 wipes it): forget slots that point into it */
+        int i;
+        for (i = 0; i < sNumSlots; i++) {
+            if (sSlots[i].owned) free(sSlots[i].buf);
+        }
+        free(sSlots);
+        sSlots = NULL;
+        sNumSlots = 0;
+    }
+}
+
+void Snapshot_Init(int slots) {
+    int i;
+    FindSections();
+    if (sSlots) {
+        for (i = 0; i < sNumSlots; i++) {
+            if (sSlots[i].owned) free(sSlots[i].buf);
+        }
+    }
     free(sSlots);
     sSlots = calloc(slots, sizeof(Slot));
     sNumSlots = slots;
+    if (sStore && slots > 0) { /* equal shares of the block */
+        size_t share = (sStoreSize / (size_t) slots) & ~(size_t) 15;
+        for (i = 0; i < slots; i++) {
+            sSlots[i].buf = sStore + (size_t) i * share;
+            sSlots[i].cap = share;
+        }
+    }
     fprintf(stderr, "Snapshot: %d slots, globals %zu + %zu bytes\n", slots, sData.size, sBss.size);
 }
 
@@ -72,9 +111,10 @@ void Snapshot_Save(int slot) {
     n++;
     for (i = 0; i < n; i++) total += r[i].size;
     if (total > s->cap) {
-        free(s->buf);
+        if (s->owned) free(s->buf);
         s->cap = total + total / 4;
         s->buf = malloc(s->cap);
+        s->owned = 1;
     }
     p = s->buf;
     for (i = 0; i < n; i++) {
@@ -158,6 +198,8 @@ int Snapshot_Compare(int a, int b, char* report, size_t len) {
 #else
 int Snapshot_Supported(void) { return 0; }
 void Snapshot_Init(int slots) { (void) slots; }
+size_t Snapshot_MaxBytes(void) { return 0; }
+void Snapshot_SetStorage(void* base, size_t size) { (void) base; (void) size; }
 void Snapshot_Save(int slot) { (void) slot; }
 int Snapshot_Load(int slot) { (void) slot; return 0; }
 size_t Snapshot_Size(int slot) { (void) slot; return 0; }

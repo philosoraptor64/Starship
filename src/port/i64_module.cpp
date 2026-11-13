@@ -21,6 +21,7 @@
 #if defined(STARSHIP_I64_MODULE)
 
 #define N64_GAME_BUILDING_MODULE 1
+#include "Snapshot.h"
 #include "i64/n64_game.h"
 
 #include "Reentry.h"
@@ -28,6 +29,7 @@
 #include "sf64_asset_recipe.h"
 
 #include "Companion.h"
+#include <sys/mman.h>
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/basic_file_sink.h>
 
@@ -413,6 +415,18 @@ extern "C" N64_GAME_EXPORT int n64_game_start(const n64_host* host, const n64_la
     gPortHostAudioBuffered = host->audio_buffered;
     LUS_SetExternalAudio(host->audio_write != nullptr);   /* no audio device of our own */
 
+    /* the rollback snapshot ring (16 slots, up to ~5 MB each) in i64's game memory arena
+     * (i64 docs/game-memory-arena.md); without one, malloc as before */
+    if (host->arena_reserve != nullptr && host->arena_size != 0) {
+        const size_t want = ((Snapshot_MaxBytes() * 16) + 0x3FFF) & ~(size_t) 0x3FFF;
+        const uint64_t a = want ? host->arena_reserve(want, 0) : 0;
+        if (a != 0 && mprotect((void*) (uintptr_t) a, want, PROT_READ | PROT_WRITE) == 0) {
+            Snapshot_SetStorage((void*) (uintptr_t) a, want);
+            if (host->log) host->log("sf64: snapshots: %zu MB block from the game memory arena", want >> 20);
+        } else if (host->log && want) {
+            host->log("sf64: snapshots: no room in the game memory arena for %zu MB; using malloc", want >> 20);
+        }
+    }
     sRunning = true;
     sExchangeFrames = 0;
     if (online && launch->session_blob_size == 0) {
@@ -500,6 +514,7 @@ extern "C" N64_GAME_EXPORT void n64_game_stop(void) {
     LUS_SetExternalPacing(false);
     GameEngine_SetOnePicturePerHostFrame(false);
     LUS_SetExternalAudio(false);
+    Snapshot_SetStorage(nullptr, 0); /* i64 wipes the arena after this */
     Reentry_RestorePristine();
     sRunning = false;
     sHost = nullptr;
