@@ -190,7 +190,7 @@ if(STARSHIP_I64_MODULE AND APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     endif()
 endif()
 
-if (CMAKE_SYSTEM_NAME STREQUAL "iOS")
+if (CMAKE_SYSTEM_NAME STREQUAL "iOS" AND NOT STARSHIP_I64_MODULE)
     # @port: the iOS files the old libultraship path pointed at never existed; ours are in ios/ (launch screen from
     # the plist, UIScene manifest for the patched SDL, controllers, Files-app Documents, local network)
     set(IOS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/ios)

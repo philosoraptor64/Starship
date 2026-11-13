@@ -2,6 +2,7 @@
 
 #include <Fast3D/interpreter.h>
 #include "Engine.h"
+#include "resource/type/audio/Sample.h"
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 
@@ -90,8 +91,10 @@ extern "C" void Port_RunEnd(int fullShutdown) {
     if (fullShutdown) {
         // the engine holds the only strong reference to libultraship's context (window,
         // renderer, resource threads, audio, config): deleting it shuts all of that down
+        SF64::gAudioSampleFreeData = true;   // the audio thread is stopped: samples go with their resources
         delete GameEngine::Instance;
         GameEngine::Instance = nullptr;
+        SF64::gAudioSampleFreeData = false;
         if (Ship::Context::GetInstance() != nullptr) {
             SPDLOG_WARN("libultraship's context outlived the engine (another owner)");
         }

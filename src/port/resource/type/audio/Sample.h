@@ -25,9 +25,18 @@ class Sample : public Ship::Resource<SampleData> {
 
     Sample() : Resource(std::shared_ptr<Ship::ResourceInitData>()) {}
 
+    ~Sample() override;
     SampleData* GetPointer();
     size_t GetPointerSize();
 
     SampleData mSample;
+    // what the factory allocated for this sample (sampleAddr may be relocated by the audio code)
+    uint8_t* mOwnedData = nullptr;
+    AdpcmLoopData* mOwnedLoop = nullptr;
+    AdpcmBookData* mOwnedBook = nullptr;
 };
+
+// Normally a sample's data is kept when its resource goes: the audio thread may still play from it.
+// At a full shutdown (an i64 run ending) the audio thread is gone, so it's freed with its resource.
+extern bool gAudioSampleFreeData;
 }

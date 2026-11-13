@@ -27,6 +27,7 @@ std::shared_ptr<Ship::IResource> ResourceFactoryBinarySampleV1::ReadResource(std
     sample->mSample.loop = LoadChild<AdpcmLoopData*>(reader->ReadUInt64());
     sample->mSample.book = LoadChild<AdpcmBookData*>(reader->ReadUInt64());
     sample->mSample.sampleAddr = new uint8_t[sample->mSample.size];
+    sample->mOwnedData = sample->mSample.sampleAddr;
     reader->Read((char*) sample->mSample.sampleAddr, sample->mSample.size);
 
     if(sample->mSample.codec == 2){
@@ -110,6 +111,7 @@ static void Mp3DecoderWorker(std::shared_ptr<Sample> sample, std::shared_ptr<Shi
     sample->mSample.tuning = (float)(sampleRate * channels) / 32000.0f;
     sample->mSample.size = numFrames * channels * 2;
     sample->mSample.sampleAddr = new uint8_t[sample->mSample.size];
+    sample->mOwnedData = sample->mSample.sampleAddr;
     drmp3_read_pcm_frames_s16(&mp3, numFrames, (int16_t*)sample->mSample.sampleAddr);
 }
 
@@ -134,6 +136,7 @@ static void OggDecoderWorker(std::shared_ptr<Sample> sample, std::shared_ptr<Shi
     int bitStream = 0;
     size_t toRead = numFrames * numChannels * 2;
     sample->mSample.sampleAddr = new uint8_t[toRead];
+    sample->mOwnedData = sample->mSample.sampleAddr;
     sample->mSample.tuning = (float)(sampleRate * numChannels) / 32000.0f;
     do {
         read = ov_read(&vf, dataBuff, 4096, 0, 2, 1, &bitStream);
@@ -162,6 +165,7 @@ std::shared_ptr<Ship::IResource> ResourceFactoryXMLSampleV0::ReadResource(std::s
     if (loopRoot != nullptr) {
         size_t i = 0;
         sample->mSample.loop = new AdpcmLoopData();
+        sample->mOwnedLoop = sample->mSample.loop;
         sample->mSample.loop->start = loopRoot->UnsignedAttribute("Start");
         sample->mSample.loop->end = loopRoot->UnsignedAttribute("End");
         sample->mSample.loop->count = loopRoot->UnsignedAttribute("Count");
@@ -181,6 +185,7 @@ std::shared_ptr<Ship::IResource> ResourceFactoryXMLSampleV0::ReadResource(std::s
         tinyxml2::XMLElement* book = bookRoot->FirstChildElement("Book");
         size_t numBooks = sample->mSample.book->numPredictors * sample->mSample.book->order * 8;
         sample->mSample.book->book = new int16_t[numBooks];
+        sample->mOwnedBook = sample->mSample.book;
         while (book != nullptr) {
             sample->mSample.book->book[i++] = book->IntAttribute("Page");
             book = book->NextSiblingElement();
@@ -207,6 +212,7 @@ std::shared_ptr<Ship::IResource> ResourceFactoryXMLSampleV0::ReadResource(std::s
             sample->mSample.tuning = (float)(wav.sampleRate * wav.channels) / 32000.0f;
             sample->mSample.size = numFrames * wav.channels * 2;
             sample->mSample.sampleAddr = new uint8_t[sample->mSample.size];
+            sample->mOwnedData = sample->mSample.sampleAddr;
 
             drwav_read_pcm_frames_s16(&wav, numFrames, (int16_t*)sample->mSample.sampleAddr);
             return sample;
@@ -222,6 +228,7 @@ std::shared_ptr<Ship::IResource> ResourceFactoryXMLSampleV0::ReadResource(std::s
     }
     // Not a normal streamed sample. Fallback to the original ADPCM sample to be decoded by the audio engine.
     sample->mSample.sampleAddr = new uint8_t[size];
+    sample->mOwnedData = sample->mSample.sampleAddr;
     // Can't use memcpy due to endianness issues.
     for (uint32_t i = 0; i < size; i++) {
         sample->mSample.sampleAddr[i] = (*sampleFile->Buffer)[i];
