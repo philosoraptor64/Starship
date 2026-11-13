@@ -419,6 +419,15 @@ void FrameInterpolation_ShouldInterpolateFrame(bool shouldInterpolate) {
     is_recording = shouldInterpolate;
 }
 
+// i64 re-entry: the last two frames' recordings (a tree of matrix ops, ~1 MB) would only be forgotten
+// by the restore of the globals at the end of a run
+void FrameInterpolation_ReleaseForReentry(void) {
+    current_recording = {};
+    previous_recording = {};
+    vector<Path*>().swap(current_path);
+    is_recording = false;
+}
+
 void FrameInterpolation_StartRecord(void) {
     previous_recording = move(current_recording);
     current_recording = {};

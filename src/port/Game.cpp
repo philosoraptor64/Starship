@@ -1,3 +1,4 @@
+#include "port/interpolation/FrameInterpolation.h"
 #include <libultraship.h>
 
 #include <Fast3D/interpreter.h>
@@ -91,6 +92,7 @@ extern "C" void Port_RunEnd(int fullShutdown) {
     if (fullShutdown) {
         // the engine holds the only strong reference to libultraship's context (window,
         // renderer, resource threads, audio, config): deleting it shuts all of that down
+        FrameInterpolation_ReleaseForReentry();
         SF64::gAudioSampleFreeData = true;   // the audio thread is stopped: samples go with their resources
         delete GameEngine::Instance;
         GameEngine::Instance = nullptr;

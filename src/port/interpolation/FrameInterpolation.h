@@ -16,6 +16,7 @@ extern "C" {
 void FrameInterpolation_ShouldInterpolateFrame(bool shouldInterpolate);
 
 void FrameInterpolation_StartRecord(void);
+void FrameInterpolation_ReleaseForReentry(void);   // i64: end of a run (frees the recordings)
 
 void FrameInterpolation_StopRecord(void);
 
