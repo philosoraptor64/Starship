@@ -21,6 +21,7 @@
 #if defined(STARSHIP_I64_MODULE)
 
 #define N64_GAME_BUILDING_MODULE 1
+#include <atomic>
 #include "Snapshot.h"
 #include "i64/n64_game.h"
 
@@ -78,6 +79,11 @@ const n64_game_info kInfo = {
 /* Survive the reset of the globals between runs (Reentry.cpp). */
 #define KEEP __attribute__((section("__DATA,__sfkeep")))
 KEEP const n64_host* sHost = nullptr;
+/* libultraship gfx_metal.cpp: a picture of the screen for i64's home screen (30 s in, then each minute) */
+extern "C" void (*gLusFrameCaptureCallback)(const uint8_t* rgba, uint32_t w, uint32_t h);
+extern "C" std::atomic<int> gLusFrameCaptureRequest;
+static unsigned sPreviewFrames = 0;
+static constexpr unsigned kPreviewFirst = 1800, kPreviewEvery = 3600; /* host frames (60/s) */
 KEEP bool sRunning = false;
 KEEP void* sRenderer = nullptr; /* SDL renderer on the host's window, reused across runs */
 KEEP void* sRendererWindow = nullptr;
@@ -380,6 +386,8 @@ extern "C" N64_GAME_EXPORT int n64_game_start(const n64_host* host, const n64_la
     Reentry_SavePristine();
 
     sHost = host;
+    sPreviewFrames = 0;
+    gLusFrameCaptureCallback = host->offer_title_art;
     SetDataHome(host);
     /* netplay settings come from the environment: none from an earlier run */
     static const char* const kNetVars[] = { "SF64_NET", "SF64_NET_HOST", "SF64_NET_PEER", "SF64_NET_BIND",
@@ -450,6 +458,9 @@ static uint64_t StatsNowMs() {
 extern "C" N64_GAME_EXPORT n64_frame_result n64_game_frame(void) {
     if (!sRunning) {
         return N64_GAME_FRAME_EXIT;
+    }
+    if (++sPreviewFrames >= kPreviewFirst && (sPreviewFrames - kPreviewFirst) % kPreviewEvery == 0 && gLusFrameCaptureCallback) {
+        gLusFrameCaptureRequest = 1;
     }
     PollEvents();
     if (sOnline && sPeerLeft) {
@@ -527,6 +538,8 @@ extern "C" N64_GAME_EXPORT int n64_game_pause_ready(void) {
 }
 
 extern "C" N64_GAME_EXPORT void n64_game_stop(void) {
+    gLusFrameCaptureCallback = nullptr;
+    gLusFrameCaptureRequest = 0;
     if (!sRunning) {
         return;
     }
