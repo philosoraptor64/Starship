@@ -46,6 +46,7 @@
 extern "C" {
 #include "port/SfNet.h"
 void Port_RunBegin(void);
+extern "C" void GameEngine_PreloadAudio(void); /* Engine.cpp */
 int Port_RunFrame(void);
 void Port_RunEnd(int fullShutdown);
 void LUS_SetExternalWindow(void* sdlWindow, void** rendererCache);
@@ -79,6 +80,7 @@ const n64_game_info kInfo = {
 /* Survive the reset of the globals between runs (Reentry.cpp). */
 #define KEEP __attribute__((section("__DATA,__sfkeep")))
 KEEP const n64_host* sHost = nullptr;
+extern "C" bool gLusHostPaced; /* libultraship gfx_sdl2.cpp */
 /* libultraship gfx_metal.cpp: a picture of the screen for i64's home screen (30 s in, then each minute) */
 extern "C" void (*gLusFrameCaptureCallback)(const uint8_t* rgba, uint32_t w, uint32_t h);
 extern "C" std::atomic<int> gLusFrameCaptureRequest;
@@ -163,6 +165,9 @@ bool BeginGame(void) {
         }
     }
     Port_RunBegin();
+    /* the audio thread loads a sequence and its sound bank synchronously when music first starts, and the game
+     * thread waits for it (an ~50-110 ms hitch half a second in): load all audio (~10 MB) on LUS's workers now */
+    GameEngine_PreloadAudio();
     sPhase = kPhaseGame;
     return true;
 }
@@ -398,6 +403,7 @@ extern "C" N64_GAME_EXPORT int n64_game_start(const n64_host* host, const n64_la
     Reentry_SavePristine();
 
     sHost = host;
+    gLusHostPaced = (launch->flags & N64_LAUNCH_HOST_PACED) != 0; /* libultraship: i64 paces the frames */
     sPreviewFrames = 0;
     gLusFrameCaptureCallback = host->offer_title_art;
     SetDataHome(host);

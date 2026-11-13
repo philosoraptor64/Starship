@@ -930,3 +930,12 @@ extern "C" void GameEngine_Free(void* ptr) {
         }
     }
 }
+
+/* i64 (i64_module.cpp): the audio thread loads a sequence and its sound bank synchronously when music first starts,
+ * and the game thread waits for it (an ~50-110 ms hitch half a second into a run). Load all audio (~10 MB) on LUS's
+ * worker threads at the start of a run instead. */
+extern "C" void GameEngine_PreloadAudio(void) {
+    if (auto rm = Ship::Context::GetInstance()->GetResourceManager()) {
+        rm->LoadResourcesAsync("ast_audio/*");
+    }
+}
