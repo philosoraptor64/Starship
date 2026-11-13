@@ -66,6 +66,9 @@ void Controller_Init(void) {
 // (online: exactly the two players' controllers are plugged, so Versus has two pilots)
 #define osContGetStatus(x) (SfNet_InSession() ? ((x) < 2) : true)
 
+int gPortInjectStart = 0;
+extern s32 gMainController;
+
 void Controller_UpdateInput(void) {
     s32 i;
 
@@ -81,6 +84,14 @@ void Controller_UpdateInput(void) {
             gControllerHold[i].button = gControllerHold[i].stick_x = gControllerHold[i].stick_y =
                 gControllerHold[i].err_no = gControllerPress[i].button = gControllerPress[i].stick_x =
                     gControllerPress[i].stick_y = gControllerPress[i].err_no = 0;
+        }
+    }
+    /* i64: the player went back to i64's menu mid-mission: press Start once, so the game is in
+     * its own pause menu when they come back (i64_module.cpp; offline only) */
+    if (gPortInjectStart) {
+        gPortInjectStart = 0;
+        if (!SfNet_InSession()) {
+            gControllerPress[gMainController].button |= START_BUTTON;
         }
     }
 }

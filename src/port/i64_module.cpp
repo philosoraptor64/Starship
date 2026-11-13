@@ -482,19 +482,48 @@ extern "C" N64_GAME_EXPORT n64_frame_result n64_game_frame(void) {
 
 /* i64 keeps the game while its players are in i64's menu. Online the peer
  * waits for us without a limit (SfNet away), as when the app is backgrounded. */
+/* the game's pause state (src/engine/fox_play.c), for opening its own pause menu */
+extern "C" {
+extern int gGameState;      /* GameState: GSTATE_PLAY = 7 */
+extern int32_t gPlayState;  /* PLAY_UPDATE = 2, PLAY_PAUSE = 100 */
+extern uint8_t gPauseEnabled;
+extern int gPortInjectStart; /* sys_joybus.c: one Start press at the next input update */
+}
+static bool sWaitPauseMenu = false;
+
 extern "C" N64_GAME_EXPORT void n64_game_set_paused(int paused) {
-    if (!sRunning || !sOnline) {
+    if (!sRunning) {
         return;
     }
-    SfNet_SetAway(paused == 1 ? 1 : 0);
+    if (sOnline) {
+        SfNet_SetAway(paused == 1 ? 1 : 0);
+        return;
+    }
+    /* offline, back to i64 mid-mission: open the game's pause menu first */
+    sWaitPauseMenu = false;
+    if (paused == 1 && gGameState == 7 && gPlayState == 2 && gPauseEnabled) {
+        gPortInjectStart = 1;
+        sWaitPauseMenu = true;
+    }
 }
 
 extern "C" N64_GAME_EXPORT void n64_game_exit_message(char* out, size_t cap) {
     std::snprintf(out, cap, "%s", sOnline ? SfNet_EndReason() : "");
 }
 
+/* offline: ready once the pause menu is open (or the game left play meanwhile) */
 extern "C" N64_GAME_EXPORT int n64_game_pause_ready(void) {
-    return 1;
+    if (!sRunning || sOnline || !sWaitPauseMenu) {
+        return 1;
+    }
+    if (gPlayState == 100 || gGameState != 7 || gPlayState != 2) {
+        sWaitPauseMenu = false;
+        if (sHost && sHost->log) {
+            sHost->log("sf64: %s", gPlayState == 100 ? "the game's pause menu is open" : "left play before pausing");
+        }
+        return 1;
+    }
+    return 0;
 }
 
 extern "C" N64_GAME_EXPORT void n64_game_stop(void) {
