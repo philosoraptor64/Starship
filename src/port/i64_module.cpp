@@ -444,6 +444,9 @@ extern "C" N64_GAME_EXPORT n64_frame_result n64_game_frame(void) {
     if (sPhase == kPhaseExchange) {
         return ExchangeFrame() ? N64_GAME_FRAME_CONTINUE : N64_GAME_FRAME_EXIT;
     }
+    if (sOnline && SfNet_EndReason()[0]) {
+        return N64_GAME_FRAME_EXIT;   /* a desync or the friend gone: i64 shows why (n64_game_exit_message) */
+    }
     // speed check: logic ticks per host frame (Star Fox's logic is 30 Hz in most scenes)
     static uint64_t sStatsAt = 0;
     static unsigned sHostFrames = 0, sLogicTicks = 0;
@@ -470,6 +473,10 @@ extern "C" N64_GAME_EXPORT void n64_game_set_paused(int paused) {
         return;
     }
     SfNet_SetAway(paused == 1 ? 1 : 0);
+}
+
+extern "C" N64_GAME_EXPORT void n64_game_exit_message(char* out, size_t cap) {
+    std::snprintf(out, cap, "%s", sOnline ? SfNet_EndReason() : "");
 }
 
 extern "C" N64_GAME_EXPORT int n64_game_pause_ready(void) {

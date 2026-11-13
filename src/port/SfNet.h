@@ -60,6 +60,8 @@ enum { SFNET_PEER_AWAY = 1, SFNET_PEER_BACK = 2, SFNET_PEER_LEFT = 3 }; /* = n64
 unsigned SfNet_SessionBlob(void* out, unsigned cap);
 int SfNet_InitExternal(const SfNetExternal* x);
 void SfNet_ExternalEvent(int event);
+/* inside a host app: why this side ends the match (a desync, the friend gone); "" = keep going */
+const char* SfNet_EndReason(void);
 
 #ifdef __cplusplus
 }

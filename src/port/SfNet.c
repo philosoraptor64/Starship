@@ -65,6 +65,8 @@ static unsigned long long sStallUsecs = 0;
 static unsigned sStalls = 0;
 static int sDesyncReported = 0;
 static char sError[256];
+/* inside a host app (i64): why this side ends the match ("" = it doesn't) */
+static char sEndReason[200];
 
 static SaveFile sHostSave; /* host: its save file; guest: the host's, received (never written here) */
 static int sHaveHostSave = 0;
@@ -318,6 +320,10 @@ static void GoOffline(void) {
     }
     sOffline = 1;
     NetLog("%s Playing on offline.", sPeerLeft ? "The other player left." : "Lost the connection to the other player.");
+    if (sExtSend && !sEndReason[0]) {   /* in i64: end the match instead of playing on alone */
+        snprintf(sEndReason, sizeof(sEndReason), "%s",
+                 sPeerLeft ? "Your friend left the game." : "Lost the connection to your friend, so the match was stopped.");
+    }
 }
 
 static void CreateNet(void) {
@@ -626,6 +632,10 @@ unsigned long long SfNet_Init(unsigned long long seed) {
 
 #define SFNET_BLOB_MAGIC 0x53465342u /* 'SFSB' */
 
+const char* SfNet_EndReason(void) {
+    return sEndReason;
+}
+
 unsigned SfNet_SessionBlob(void* out, unsigned cap) {
     u32 h[2] = { SFNET_BLOB_MAGIC, 1 };
     SaveFile save;
@@ -812,7 +822,7 @@ void SfNet_EndTick(int tick, unsigned long long hash) {
         if (desyncAt == -2) {
             desyncAt = EnvStr("SF64_NET_TEST_DESYNC") ? atoi(EnvStr("SF64_NET_TEST_DESYNC")) : -1;
         }
-        if (tick == desyncAt) {
+        if (tick == desyncAt && sIsHost) {   /* (one side only, or both change alike) */
             extern s32 sRandSeed1;
             sRandSeed1 = sRandSeed1 % 29000 + 1 + (sRandSeed1 == 1);
             NetLog("test desync injected at tick %d", tick);
@@ -825,6 +835,10 @@ void SfNet_EndTick(int tick, unsigned long long hash) {
     if (!sDesyncReported && n64net_sync_desynced(sNet, &dtick, &dkind)) {
         sDesyncReported = 1;
         NetLog("DESYNC detected at tick %u", dtick);
+        if (sExtSend && !sEndReason[0]) {
+            snprintf(sEndReason, sizeof(sEndReason),
+                     "The two games got out of step, so the match was stopped. (Both logs have the details.)");
+        }
     }
     if (tick % SFNET_STATS_EVERY == 0 && tick > 0) {
         n64net_input_stats st;
