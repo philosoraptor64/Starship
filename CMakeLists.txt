@@ -167,6 +167,29 @@ list(FILTER ALL_FILES EXCLUDE REGEX "src/sys/sys_timer.c")
 list(FILTER ALL_FILES EXCLUDE REGEX "src/sys/sys_fault.c")
 list(FILTER ALL_FILES EXCLUDE REGEX "src/mods/object_ram.c")
 
+option(STARSHIP_I64_MODULE "Build Star Fox 64 as an i64 game module (src/port/i64_module.cpp)" OFF)
+if(STARSHIP_I64_MODULE AND APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    # The module links spdlog's static archive: Homebrew's shared spdlog would outlive the module's runs and be
+    # shared with the host's other games (its registry then points into memory the module resets between runs).
+    # Found once here and made global, so libultraship's and Torch's find_package reuse these targets.
+    find_package(spdlog CONFIG QUIET)
+    if(TARGET spdlog::spdlog)
+        get_target_property(_spdlog_dylib spdlog::spdlog IMPORTED_LOCATION_RELEASE)
+        get_filename_component(_spdlog_dir "${_spdlog_dylib}" DIRECTORY)
+        if(EXISTS "${_spdlog_dir}/libspdlog.a")
+            set_target_properties(spdlog::spdlog PROPERTIES
+                IMPORTED_LOCATION_RELEASE "${_spdlog_dir}/libspdlog.a"
+                IMPORTED_LOCATION "${_spdlog_dir}/libspdlog.a")
+            message(STATUS "i64 module: static spdlog ${_spdlog_dir}/libspdlog.a")
+        endif()
+        foreach(t spdlog::spdlog spdlog::spdlog_header_only fmt::fmt fmt::fmt-header-only)
+            if(TARGET ${t})
+                set_target_properties(${t} PROPERTIES IMPORTED_GLOBAL TRUE)
+            endif()
+        endforeach()
+    endif()
+endif()
+
 if (CMAKE_SYSTEM_NAME STREQUAL "iOS")
     # @port: the iOS files the old libultraship path pointed at never existed; ours are in ios/ (launch screen from
     # the plist, UIScene manifest for the patched SDL, controllers, Files-app Documents, local network)
@@ -185,8 +208,34 @@ if (CMAKE_SYSTEM_NAME STREQUAL "iOS")
         MACOSX_BUNDLE_BUNDLE_VERSION 1
         RESOURCE "${ICON_FILES}"
     )
+elseif(STARSHIP_I64_MODULE)
+    add_library(${PROJECT_NAME} SHARED ${ALL_FILES})
 else()
     add_executable(${PROJECT_NAME} ${ALL_FILES})
+endif()
+if(STARSHIP_I64_MODULE)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE STARSHIP_I64_MODULE=1)
+    set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME sf64_i64)
+    target_link_options(${PROJECT_NAME} PRIVATE
+        "-Wl,-exported_symbols_list,${CMAKE_CURRENT_SOURCE_DIR}/src/port/i64/exports.txt")
+    # the asset recipe fingerprint (n64_game_start checks the stamp of an imported sf64.o2r)
+    add_custom_target(sf64_asset_recipe ALL
+        COMMAND ${CMAKE_COMMAND} -DSRC=${CMAKE_CURRENT_SOURCE_DIR} -DOUT=${CMAKE_BINARY_DIR}/generated/sf64_asset_recipe.h
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/AssetRecipeId.cmake
+        BYPRODUCTS ${CMAKE_BINARY_DIR}/generated/sf64_asset_recipe.h
+        VERBATIM)
+    add_dependencies(${PROJECT_NAME} sf64_asset_recipe)
+    # the module's read-only resources for i64 (n64_host.bundle_dir): the extraction
+    # recipe and the port's own assets. Nothing ROM-derived.
+    set(SF64_MODULE_RES "${CMAKE_BINARY_DIR}/libsf64_i64.resources")
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E rm -rf "${SF64_MODULE_RES}"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${SF64_MODULE_RES}"
+        COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_SOURCE_DIR}/config.yml" "${SF64_MODULE_RES}/config.yml"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/assets/yaml" "${SF64_MODULE_RES}/assets/yaml"
+        COMMAND bash -c "for f in '${CMAKE_BINARY_DIR}/starship.o2r' '${CMAKE_SOURCE_DIR}/starship.o2r'; do [ -f \"$f\" ] && { cp \"$f\" '${SF64_MODULE_RES}/'; exit 0; }; done; echo 'note: starship.o2r not found - build GeneratePortO2R'"
+        COMMENT "Staging the i64 module resources"
+        VERBATIM)
 endif()
 
 # Netplay needs bit-identical simulation on every device: no FMA contraction
@@ -311,7 +360,17 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
         set(${_v} 0 CACHE INTERNAL "")
     endforeach()
 endif()
-add_subdirectory(libultraship ${CMAKE_BINARY_DIR}/libultraship) # @port: per build folder (the Mac and iOS builds overwrote each other in the source tree)
+# i64 game module (-DSTARSHIP_I64_MODULE=ON): the game as a shared library for
+# the i64 launcher, which owns the app, SDL, the window, audio and the network
+# session (src/port/i64_module.cpp). The stand-alone app is unchanged when OFF.
+if(STARSHIP_I64_MODULE)
+  set(LUS_OBJC_PREFIX SF64 CACHE STRING "" FORCE)
+  if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    set(LUS_SHARED_SDL ON CACHE BOOL "" FORCE)   # SDL comes from i64 (@rpath/libSDL2-2.0.0.dylib)
+  endif()
+endif()
+add_subdirectory(libultraship ${CMAKE_BINARY_DIR}/libultraship)
+ # @port: per build folder (the Mac and iOS builds overwrote each other in the source tree)
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS" AND TARGET zip)
     # @port: libzip (fetched by libultraship on iOS) inherits this directory's include paths, and
     # libultraship/src/config/config.h then shadows libzip's own config.h (case-insensitive file system)
@@ -452,6 +511,9 @@ option(BUILD_STORMLIB "Build with StormLib support" OFF)
 option(BUILD_SM64 "Build with Super Mario 64 support" OFF)
 option(BUILD_MK64 "Build with Mario Kart 64 support" OFF)
 option(BUILD_FZERO "Build with F-Zero X support" OFF)
+if(STARSHIP_I64_MODULE)
+    set(TORCH_STATIC_SPDLOG ON)
+endif()
 add_subdirectory(tools/Torch)
 target_link_libraries(${PROJECT_NAME} PRIVATE torch "${ADDITIONAL_LIBRARY_DEPENDENCIES}")
 

@@ -1,0 +1,18 @@
+# i64 module: a fingerprint of the asset extraction recipe (config.yml, assets/yaml/, Torch's source). An sf64.o2r
+# imported with another recipe is imported again. Usage: cmake -DSRC=<source dir> -DOUT=<header> -P AssetRecipeId.cmake
+file(GLOB_RECURSE files RELATIVE "${SRC}" "${SRC}/config.yml" "${SRC}/assets/yaml/*" "${SRC}/tools/Torch/src/*")
+list(SORT files)
+set(all "")
+foreach(f IN LISTS files)
+  file(SHA1 "${SRC}/${f}" h)
+  string(APPEND all "${f}:${h}\n")
+endforeach()
+string(SHA1 id "${all}")
+string(SUBSTRING "${id}" 0 12 id)
+set(text "#define SF64_ASSET_RECIPE \"${id}\"\n")
+if(EXISTS "${OUT}")
+  file(READ "${OUT}" old)
+endif()
+if(NOT "${old}" STREQUAL "${text}")
+  file(WRITE "${OUT}" "${text}")
+endif()

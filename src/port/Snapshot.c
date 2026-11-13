@@ -7,6 +7,8 @@
 
 #if SF_SNAPSHOT_SUPPORTED
 #include <mach-o/getsect.h>
+/* this image: the app, or the i64 module dylib (_mh_execute_header is the app only) */
+extern const struct mach_header_64 __dso_handle;
 #include <mach-o/ldsyms.h>
 
 extern int sMemoryBuffer[];
@@ -41,10 +43,10 @@ int Snapshot_Supported(void) {
 
 void Snapshot_Init(int slots) {
     unsigned long size = 0;
-    sData.base = getsectiondata(&_mh_execute_header, SF_SNAPSHOT_SEGMENT, "__data", &size);
+    sData.base = getsectiondata(&__dso_handle, SF_SNAPSHOT_SEGMENT, "__data", &size);
     sData.size = sData.base ? size : 0;
     size = 0;
-    sBss.base = getsectiondata(&_mh_execute_header, SF_SNAPSHOT_SEGMENT, "__bss", &size);
+    sBss.base = getsectiondata(&__dso_handle, SF_SNAPSHOT_SEGMENT, "__bss", &size);
     sBss.size = sBss.base ? size : 0;
     free(sSlots);
     sSlots = calloc(slots, sizeof(Slot));

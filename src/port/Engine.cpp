@@ -362,6 +362,39 @@ extern "C" int countermin = 0;
 extern "C" unsigned short samples_high = SAMPLES_HIGH;
 extern "C" unsigned short samples_low = SAMPLES_LOW;
 
+/* Inside a host app (the i64 launcher): the game's audio goes to the host,
+ * which mixes and plays it; set by src/port/i64_module.cpp for a run. */
+extern "C" {
+void (*gPortHostAudioWrite)(const int16_t* stereo, uint32_t frames, uint32_t rate) = nullptr;
+uint32_t (*gPortHostAudioBuffered)(uint32_t rate) = nullptr;
+}
+static constexpr uint32_t kHostAudioRate = 32000; /* the SAMPLES_HIGH/LOW values above are for 32 kHz */
+
+static int PortAudioBuffered() {
+    if (gPortHostAudioWrite != nullptr && gPortHostAudioBuffered != nullptr) {
+        return (int) gPortHostAudioBuffered(kHostAudioRate);
+    }
+    return AudioPlayerBuffered();
+}
+
+static void PortAudioPlay(s16* samples, uint32_t frames, int channels) {
+    if (gPortHostAudioWrite != nullptr) {
+        if (channels == 2) {
+            gPortHostAudioWrite(samples, frames, kHostAudioRate);
+        } else {   /* the host takes stereo: front left/right */
+            static s16 stereo[SAMPLES_HIGH * 5 * 2];
+            uint32_t n = frames < SAMPLES_HIGH * 5 ? frames : SAMPLES_HIGH * 5;
+            for (uint32_t i = 0; i < n; i++) {
+                stereo[2 * i] = samples[i * channels];
+                stereo[2 * i + 1] = samples[i * channels + (channels > 1 ? 1 : 0)];
+            }
+            gPortHostAudioWrite(stereo, n, kHostAudioRate);
+        }
+        return;
+    }
+    AudioPlayerPlayFrame((u8*) samples, frames * channels * sizeof(int16_t));
+}
+
 void GameEngine::HandleAudioThread() {
 #ifdef PIPE_DEBUG
     std::ofstream outfile("audio.bin", std::ios::binary | std::ios::app);
@@ -383,7 +416,7 @@ void GameEngine::HandleAudioThread() {
 #define MAX_AUDIO_FRAMES_PER_UPDATE 5 // Compile-time constant with max value of gVIsPerFrame
 
         std::unique_lock<std::mutex> Lock(audio.mutex);
-        int samples_left = AudioPlayerBuffered();
+        int samples_left = PortAudioBuffered();
         u32 num_audio_samples = samples_left < AudioPlayerGetDesiredBuffered() ? (((samples_high))) : (((samples_low)));
 
         frames++;
@@ -405,8 +438,7 @@ void GameEngine::HandleAudioThread() {
                           num_audio_samples * (sizeof(int16_t) * num_audio_channels * AUDIO_FRAMES_PER_UPDATE));
         }
 #endif
-        AudioPlayerPlayFrame((u8*) audio_buffer,
-                             num_audio_samples * (sizeof(int16_t) * num_audio_channels * AUDIO_FRAMES_PER_UPDATE));
+        PortAudioPlay(audio_buffer, num_audio_samples * AUDIO_FRAMES_PER_UPDATE, num_audio_channels);
         
         audio.processing = false;
         audio.cv_from_thread.notify_one();
