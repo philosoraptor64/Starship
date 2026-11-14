@@ -58,9 +58,13 @@ static int sPeerLeft = 0;
 static int sPeerAway = 0; /* i64 says the other player's app is in the background */
 static volatile int sMismatch = 0;
 static int sLastTick = -1;
-static OSContPad sTickPads[2];
+static OSContPad sTickPads[4];
+/* who plays: players 0..sNumPlayers-1, sLocalMask = this machine's, sPadOf[p] = its controller for local p */
+static int sNumPlayers = 2;
+static unsigned sLocalMask = 0;
+static int sPadOf[4] = { 0, 0, 0, 0 };
 #define SFNET_PAD_RING 128
-static OSContPad sUsedPads[SFNET_PAD_RING][2]; /* the pads each tick used (resimulation after going offline) */
+static OSContPad sUsedPads[SFNET_PAD_RING][4]; /* the pads each tick used (resimulation after going offline) */
 static unsigned long long sStallUsecs = 0;
 static unsigned sStalls = 0;
 static int sDesyncReported = 0;
@@ -330,8 +334,14 @@ static void CreateNet(void) {
     n64net_input_config cfg;
     const char* s;
     memset(&cfg, 0, sizeof(cfg));
-    cfg.num_players = 2;
-    cfg.local_player = sIsHost ? 0 : 1;
+    if (sLocalMask == 0) { /* stand-alone / older hosts: two players, one per machine */
+        sNumPlayers = 2;
+        sLocalMask = 1u << (sIsHost ? 0 : 1);
+        sPadOf[sIsHost ? 0 : 1] = 0;
+    }
+    cfg.num_players = sNumPlayers;
+    cfg.local_player = SfNet_LocalPlayer();
+    cfg.local_mask = sLocalMask;
     cfg.session_id = (u32) (sConfigHash ^ (sConfigHash >> 32));
     cfg.input_delay = (s = EnvStr("SF64_NET_DELAY")) ? (u32) atoi(s) : 2;
     cfg.rollback_window = 0; /* lockstep */
@@ -655,6 +665,15 @@ int SfNet_InitExternal(const SfNetExternal* x) {
     sExtRecv = x->recv;
     sIsHost = x->localplayer == 0;
     sSeed = x->seed;
+    sLocalMask = 0;
+    if (x->num_players >= 2 && x->num_players <= 4 && x->local_mask != 0) {
+        int p;
+        sNumPlayers = x->num_players;
+        sLocalMask = x->local_mask & ((1u << sNumPlayers) - 1);
+        for (p = 0; p < 4; p++) {
+            sPadOf[p] = x->pad_of_player[p];
+        }
+    }
     sWanted = 1;
     if (!h || x->blobsize < 8 + sizeof(SaveFile) || h[0] != SFNET_BLOB_MAGIC || h[1] != 1) {
         snprintf(sError, sizeof(sError), "Netplay: the host's session data is missing or from another version.");
@@ -690,7 +709,17 @@ int SfNet_InSession(void) {
 }
 
 int SfNet_LocalPlayer(void) {
+    int p;
+    for (p = 0; p < 4; p++) {
+        if (sLocalMask & (1u << p)) {
+            return p;
+        }
+    }
     return sIsHost ? 0 : 1;
+}
+
+static int IsLocalPlayer(int p) {
+    return (sLocalMask & (1u << p)) != 0;
 }
 
 static n64net_pad ToNet(const OSContPad* p) {
@@ -713,15 +742,29 @@ static void FromNet(const n64net_pad* n, OSContPad* p) {
     p->right_stick_y = n->rstick_y;
 }
 
+/* `local`: this machine's 4 controllers (index = its own controller number) */
 static void ExchangeTick(int tick, const OSContPad* local) {
-    const int me = sIsHost ? 0 : 1;
     int p;
     if (sOffline) {
-        sTickPads[me] = *local;
-        memset(&sTickPads[1 - me], 0, sizeof(sTickPads[0]));
+        for (p = 0; p < 4; p++) {
+            if (p < sNumPlayers && IsLocalPlayer(p)) {
+                sTickPads[p] = local[sPadOf[p] & 3];
+            } else {
+                memset(&sTickPads[p], 0, sizeof(sTickPads[0]));
+            }
+        }
         return;
     }
-    n64net_input_set_local(sNet, (u32) tick, ToNet(local));
+    {
+        n64net_pad pads[N64NET_INPUT_MAX_PLAYERS];
+        memset(pads, 0, sizeof(pads));
+        for (p = 0; p < sNumPlayers; p++) {
+            if (IsLocalPlayer(p)) {
+                pads[p] = ToNet(&local[sPadOf[p] & 3]);
+            }
+        }
+        n64net_input_set_local_pads(sNet, (u32) tick, pads);
+    }
     if (!n64net_input_ready(sNet, (u32) tick)) {
         unsigned long long start = NowUsecs(), lastCheck = start;
         sStalls++;
@@ -743,8 +786,12 @@ static void ExchangeTick(int tick, const OSContPad* local) {
         }
         sStallUsecs += NowUsecs() - start;
     }
-    for (p = 0; p < 2; p++) {
+    for (p = 0; p < 4; p++) {
         n64net_pad n;
+        if (p >= sNumPlayers) {
+            memset(&sTickPads[p], 0, sizeof(sTickPads[0]));
+            continue;
+        }
         n64net_input_get(sNet, p, (u32) tick, &n);
         FromNet(&n, &sTickPads[p]);
     }
@@ -756,13 +803,16 @@ void SfNet_FilterPads(OSContPad* pads, int tick) {
         return;
     }
     if (gRollbackResim && sOffline) {
-        sTickPads[0] = sUsedPads[tick % SFNET_PAD_RING][0];
-        sTickPads[1] = sUsedPads[tick % SFNET_PAD_RING][1];
+        memcpy(sTickPads, sUsedPads[tick % SFNET_PAD_RING], sizeof(sTickPads));
     } else if (gRollbackResim) {
         /* resimulation: the ledger's inputs for that tick (confirmed, or the newest prediction) */
         int p;
-        for (p = 0; p < 2; p++) {
+        for (p = 0; p < 4; p++) {
             n64net_pad n;
+            if (p >= sNumPlayers) {
+                memset(&sTickPads[p], 0, sizeof(sTickPads[0]));
+                continue;
+            }
             n64net_input_get(sNet, p, (u32) tick, &n);
             FromNet(&n, &sTickPads[p]);
         }
@@ -770,16 +820,16 @@ void SfNet_FilterPads(OSContPad* pads, int tick) {
         Poll();
     }
     if (!gRollbackResim && tick != sLastTick) {
-        OSContPad local = pads[0]; /* this machine's own controller is always controller 1 */
+        OSContPad local[4]; /* this machine's own controllers (its first is always controller 1) */
         int t;
+        memcpy(local, pads, sizeof(local));
         if (sBotSeed && tick >= sBotFrom) {
-            ReplayCheck_BotPad(tick, sBotSeed, &local);
+            ReplayCheck_BotPad(tick, sBotSeed, &local[0]);
         }
         /* ticks in which the game read no pads still get an input (unchanged): the ledgers stay in step */
         for (t = sLastTick + 1; t <= tick; t++) {
-            ExchangeTick(t, &local);
-            sUsedPads[t % SFNET_PAD_RING][0] = sTickPads[0];
-            sUsedPads[t % SFNET_PAD_RING][1] = sTickPads[1];
+            ExchangeTick(t, local);
+            memcpy(sUsedPads[t % SFNET_PAD_RING], sTickPads, sizeof(sTickPads));
         }
         sLastTick = tick;
     }
@@ -796,7 +846,7 @@ void SfNet_FilterPads(OSContPad* pads, int tick) {
         }
     }
     for (i = 0; i < 4; i++) {
-        if (i < 2) {
+        if (i < sNumPlayers) {
             pads[i] = sTickPads[i];
             pads[i].err_no = 0;
         } else {
@@ -902,13 +952,30 @@ int SfNet_ViewCount(int camCount) {
     if (sTestViewCount > 0) {
         return sTestViewCount;
     }
-    return sActive ? 1 : 0; /* stays after a disconnect: the view doesn't jump */
+    if (!sActive) {
+        return 0;
+    }
+    { /* this machine's players (stays after a disconnect: the view doesn't jump) */
+        int p, n = 0;
+        for (p = 0; p < sNumPlayers; p++) {
+            n += IsLocalPlayer(p);
+        }
+        return n > 0 ? n : 1;
+    }
 }
 
 int SfNet_ViewPilot(int view) {
     TestViewsInit();
     if (sTestViewCount > 0) {
         return (view >= 0 && view < sTestViewCount) ? sTestViews[view] : -1;
+    }
+    {
+        int p, v = 0;
+        for (p = 0; p < sNumPlayers; p++) {
+            if (IsLocalPlayer(p) && v++ == view) {
+                return p;
+            }
+        }
     }
     return view == 0 ? SfNet_LocalPlayer() : -1;
 }

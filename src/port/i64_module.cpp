@@ -72,9 +72,11 @@ const n64_game_info kInfo = {
     kRoms,
     1,
     SFNET_BUILD_ID,
-    2,
+    4,  /* Versus: 4 pilots, any split over up to 4 devices */
     60,
     0,
+    0,  /* drop-outs: "end the game" only for now (Remove via Battle Royal's elimination is planned) */
+    4,
 };
 
 /* Survive the reset of the globals between runs (Reentry.cpp). */
@@ -139,6 +141,9 @@ bool SetDataHome(const n64_host* host) {
 enum { kPhaseNone, kPhaseExchange, kPhaseGame };
 int sPhase = kPhaseNone;
 int sPlayer = 0;
+int sNumPlayers = 0;          /* i64's player table (0 = two players, one per machine) */
+unsigned sLocalMask = 0;
+int sPadOf[4] = { 0, 0, 0, 0 };
 unsigned long long sSeed = 0;
 uint32_t sRun = 0;
 std::vector<uint8_t> sBlob;
@@ -157,6 +162,9 @@ bool BeginGame(void) {
         x.blobsize = (unsigned) sBlob.size();
         x.send = HostSend;
         x.recv = HostRecv;
+        x.num_players = sNumPlayers;
+        x.local_mask = sLocalMask;
+        for (int p = 0; p < 4; p++) x.pad_of_player[p] = sPadOf[p];
         if (sHost->log != nullptr) {
             sHost->log("sf64: online as player %d (session data %zu bytes)", sPlayer + 1, sBlob.size());
         }
@@ -363,8 +371,9 @@ extern "C" N64_GAME_EXPORT int n64_game_start(const n64_host* host, const n64_la
         return 1;
     }
     const bool online = launch->mode == N64_LAUNCH_ONLINE;
-    if (online && (host->net_send == nullptr || host->net_recv == nullptr || launch->local_player > 1)) {
-        std::snprintf(err, err_size, "online needs i64's game channel and 2 players");
+    if (online && (host->net_send == nullptr || host->net_recv == nullptr || launch->player_count < 2 ||
+                   launch->player_count > 4)) {
+        std::snprintf(err, err_size, "online needs i64's game channel and 2-4 players");
         return 1;
     }
     /* Game data: sf64.o2r is imported from the player's ROM (above),
@@ -416,7 +425,18 @@ extern "C" N64_GAME_EXPORT int n64_game_start(const n64_host* host, const n64_la
     sOnline = online;
     sPeerLeft = false;
     sNetHost = online ? host : nullptr;
-    sPlayer = (int) launch->local_player;
+    sPlayer = (int) launch->local_machine == 0 ? 0 : 1;   /* SfNet: 0 = the session's host */
+    sNumPlayers = 0;
+    sLocalMask = 0;
+    if (online) {
+        sNumPlayers = (int) launch->player_count;
+        for (uint32_t p = 0; p < launch->player_count && p < 4; p++) {
+            if (launch->players[p].local) {
+                sLocalMask |= 1u << p;
+                sPadOf[p] = launch->players[p].pad;
+            }
+        }
+    }
     sSeed = launch->seed;
     sRun = launch->run;
     sBlob.clear();

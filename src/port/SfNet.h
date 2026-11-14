@@ -28,7 +28,7 @@ unsigned long long SfNet_Init(unsigned long long seed);
 int SfNet_Active(void);
 /* 1 from connecting until the game quits, also after the other player left (SfNet_Active: connected now) */
 int SfNet_InSession(void);
-int SfNet_LocalPlayer(void);
+int SfNet_LocalPlayer(void); /* this machine's first player */
 /* online Versus (4 cameras): draw only this machine's own pilots (SF64_NET_VIEW=split: classic 4-way).
  * SfNet_FullView = SfNet_ViewCount > 0. One pilot fills the screen; 2-4 take quarter-size views
  * (SfNet_ViewRect, N64 screen units). SfNet_ViewOf = a pilot's view index, -1 if not shown here. */
@@ -61,6 +61,10 @@ typedef struct SfNetExternal {
     unsigned blobsize;
     int (*send)(const void* data, unsigned size);
     int (*recv)(void* buf, unsigned cap); /* one datagram: size, 0 if none */
+    /* i64's player table (ABI v2); num_players 0 = two players, one per machine (localplayer) */
+    int num_players;              /* 2-4 player slots in the session */
+    unsigned local_mask;          /* the players this machine controls (bit p) */
+    int pad_of_player[4];         /* this machine's controller index for each local player */
 } SfNetExternal;
 enum { SFNET_PEER_AWAY = 1, SFNET_PEER_BACK = 2, SFNET_PEER_LEFT = 3 }; /* = n64_net_event */
 unsigned SfNet_SessionBlob(void* out, unsigned cap);
