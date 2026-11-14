@@ -872,13 +872,69 @@ void SfNet_Shutdown(void) {
     }
 }
 
-int SfNet_FullView(int camCount) {
+/* The pilots this device shows (its local players), in view order. Online today: this machine's one pilot.
+ * Test: SF64_TEST_VIEWS="0,2" shows those pilots' views (offline too) in the layout for that many views. */
+static int sTestViews[4], sTestViewCount = -1;
+
+static void TestViewsInit(void) {
+    if (sTestViewCount >= 0) {
+        return;
+    }
+    sTestViewCount = 0;
+    const char* v = EnvStr("SF64_TEST_VIEWS");
+    for (const char* q = v; q && *q && sTestViewCount < 4; q++) {
+        if (*q >= '0' && *q <= '3') {
+            sTestViews[sTestViewCount++] = *q - '0';
+        }
+    }
+}
+
+int SfNet_ViewCount(int camCount) {
     static int split = -1;
     if (split < 0) {
         const char* v = EnvStr("SF64_NET_VIEW");
         split = v && !strcmp(v, "split");
     }
-    return camCount == 4 && sActive && !split; /* stays after a disconnect: the view doesn't jump */
+    if (camCount != 4 || split) {
+        return 0;
+    }
+    TestViewsInit();
+    if (sTestViewCount > 0) {
+        return sTestViewCount;
+    }
+    return sActive ? 1 : 0; /* stays after a disconnect: the view doesn't jump */
+}
+
+int SfNet_ViewPilot(int view) {
+    TestViewsInit();
+    if (sTestViewCount > 0) {
+        return (view >= 0 && view < sTestViewCount) ? sTestViews[view] : -1;
+    }
+    return view == 0 ? SfNet_LocalPlayer() : -1;
+}
+
+int SfNet_ViewOf(int pilot) {
+    for (int v = 0; v < SfNet_ViewCount(4); v++) {
+        if (SfNet_ViewPilot(v) == pilot) {
+            return v;
+        }
+    }
+    return -1;
+}
+
+void SfNet_ViewRect(int view, float* x, float* y, float* w, float* h) {
+    const int k = SfNet_ViewCount(4);
+    if (k <= 1) { /* one pilot: the whole screen */
+        *x = 0, *y = 0, *w = 320, *h = 240;
+    } else if (k == 2) { /* two: the top quarters, side by side, centred vertically */
+        *x = (float) (view * 160), *y = 60, *w = 160, *h = 120;
+    } else { /* three or four: the game's own quarters */
+        *x = (float) ((view % 2) * 160), *y = (float) ((view / 2) * 120), *w = 160, *h = 120;
+    }
+}
+
+int SfNet_FullView(int camCount) {
+    return SfNet_ViewCount(camCount) > 0;
 }
 
 /* ------------------------------------------------------------------ rollback */

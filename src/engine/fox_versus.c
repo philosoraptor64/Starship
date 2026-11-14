@@ -1,5 +1,6 @@
 #include "port/SnapshotSection.h"
 #include "port/SfNet.h"
+#include "port/HudFullView.h"
 #include "prevent_bss_reordering.h"
 #include "port/ReplayCheck.h"
 #include "global.h"
@@ -693,18 +694,24 @@ s32 func_versus_800BF59C(void) {
         if (D_80178850[i] == 0) {
             continue;
         }
-        // @port: online full view: only this device's own slot
-        if (SfNet_FullView(gCamCount) && (i != SfNet_LocalPlayer())) {
+        // @port: online views: only this device's own slots, moved into their views
+        if (SfNet_FullView(gCamCount) && (SfNet_ViewOf(i) < 0)) {
             continue;
         }
+        {
+            Gfx* start = gMasterDisp;
 
-        if (gPlayerInactive[i] || (gVsMatchType == VS_MATCH_BATTLE)) {
-            colorGB = D_801787D8[i];
-            gDPSetPrimColor(gMasterDisp++, 0, 0, 255, colorGB, colorGB, 255);
-            func_versus_800BD76C(D_800D4BFC[i], D_800D4C0C[i]);
-        } else {
-            if (sUnlockLandmaster || sUnlockOnFoot) {
-                func_versus_800BE924(i);
+            if (gPlayerInactive[i] || (gVsMatchType == VS_MATCH_BATTLE)) {
+                colorGB = D_801787D8[i];
+                gDPSetPrimColor(gMasterDisp++, 0, 0, 255, colorGB, colorGB, 255);
+                func_versus_800BD76C(D_800D4BFC[i], D_800D4C0C[i]);
+            } else {
+                if (sUnlockLandmaster || sUnlockOnFoot) {
+                    func_versus_800BE924(i);
+                }
+            }
+            if (SfNet_FullView(gCamCount)) {
+                HudFullView_Transform(start, gMasterDisp, i);
             }
         }
     }

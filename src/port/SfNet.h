@@ -29,8 +29,14 @@ int SfNet_Active(void);
 /* 1 from connecting until the game quits, also after the other player left (SfNet_Active: connected now) */
 int SfNet_InSession(void);
 int SfNet_LocalPlayer(void);
-/* online Versus (4 cameras): draw only this machine's pilot, full screen (SF64_NET_VIEW=split: classic 4-way) */
+/* online Versus (4 cameras): draw only this machine's own pilots (SF64_NET_VIEW=split: classic 4-way).
+ * SfNet_FullView = SfNet_ViewCount > 0. One pilot fills the screen; 2-4 take quarter-size views
+ * (SfNet_ViewRect, N64 screen units). SfNet_ViewOf = a pilot's view index, -1 if not shown here. */
 int SfNet_FullView(int camCount);
+int SfNet_ViewCount(int camCount);
+int SfNet_ViewPilot(int view);
+int SfNet_ViewOf(int pilot);
+void SfNet_ViewRect(int view, float* x, float* y, float* w, float* h);
 /* right after osContGetReadData (and the replay check): pads 1-2 = the exchanged inputs of logic tick `tick` */
 void SfNet_FilterPads(OSContPad* pads, int tick);
 /* after each logic tick, with the state hash */

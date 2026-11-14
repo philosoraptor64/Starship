@@ -270,6 +270,29 @@ void Game_InitViewport(Gfx** dList, u8 camCount, u8 camIndex) {
     gSPViewport((*dList)++, gViewport++);
 }
 
+// @port: online Versus: the viewport (and scissor) of this device's view `view` (SfNet_ViewRect)
+static void Game_InitNetViewport(Gfx** dList, s32 view) {
+    f32 x, y, w, h;
+
+    if (SfNet_ViewCount(gCamCount) <= 1) {
+        Game_InitFullViewport();
+        gSPViewport((*dList)++, gViewport++);
+        return;
+    }
+    SfNet_ViewRect(view, &x, &y, &w, &h);
+    gViewport->vp.vscale[0] = w * 2;
+    gViewport->vp.vscale[1] = h * 2;
+    gViewport->vp.vscale[2] = G_MAXZ / 2;
+    gViewport->vp.vscale[3] = 0;
+    gViewport->vp.vtrans[0] = (x + w / 2) * 4;
+    gViewport->vp.vtrans[1] = (y + h / 2) * 4;
+    gViewport->vp.vtrans[2] = G_MAXZ / 2;
+    gViewport->vp.vtrans[3] = 0;
+    gDPSetScissor((*dList)++, G_SC_NON_INTERLACE, MAX((s32) x, SCREEN_MARGIN), MAX((s32) y, SCREEN_MARGIN),
+                  MIN((s32) (x + w), SCREEN_WIDTH - SCREEN_MARGIN), MIN((s32) (y + h), SCREEN_HEIGHT - SCREEN_MARGIN));
+    gSPViewport((*dList)++, gViewport++);
+}
+
 void Game_Draw(s32 playerNum) {
     FrameInterpolation_StartRecord();
     switch (gDrawMode) {
@@ -366,7 +389,11 @@ void Game_Update(void) {
     if (Game_ChangeScene() != true) {
         Lib_InitPerspective(&gUnkDisp1);
         // @port: online Versus: this device shows only its own pilot, full screen (all four are still simulated)
-        Game_InitViewport(&gUnkDisp1, SfNet_FullView(gCamCount) ? 1 : gCamCount, 0);
+        if (SfNet_FullView(gCamCount)) {
+            Game_InitNetViewport(&gUnkDisp1, 0);
+        } else {
+            Game_InitViewport(&gUnkDisp1, gCamCount, 0);
+        }
 
         if (gNextGameStateTimer != 0) {
             gNextGameStateTimer--;
@@ -521,9 +548,34 @@ void Game_Update(void) {
                 break;
         }
 
-        Game_Draw(SfNet_FullView(gCamCount) ? SfNet_LocalPlayer() : 0);
+        Game_Draw(SfNet_FullView(gCamCount) ? SfNet_ViewPilot(0) : 0);
 
         if (SfNet_FullView(gCamCount)) {
+            // this device's other pilots (2-4 local players), each in its own view
+            for (i = 1; i < SfNet_ViewCount(gCamCount); i++) {
+                Game_InitNetViewport(&gMasterDisp, i);
+                Game_Draw(SfNet_ViewPilot(i));
+            }
+            if (SfNet_ViewCount(gCamCount) > 1) {
+                const s32 left = OTRGetRectDimensionFromLeftEdge(0);
+                const s32 right = OTRGetRectDimensionFromRightEdge(SCREEN_WIDTH);
+
+                gDPPipeSync(gMasterDisp++);
+                gDPSetScissor(gMasterDisp++, G_SC_NON_INTERLACE, SCREEN_MARGIN, SCREEN_MARGIN,
+                              SCREEN_WIDTH - SCREEN_MARGIN, SCREEN_HEIGHT - SCREEN_MARGIN);
+                // black around the views: two views leave bands above and below, three leave the last quarter
+                if (SfNet_ViewCount(gCamCount) == 2) {
+                    Graphics_FillRectangle(&gMasterDisp, left, 0, right, 60 - 1, 0, 0, 0, 255);
+                    Graphics_FillRectangle(&gMasterDisp, left, 180, right, SCREEN_HEIGHT, 0, 0, 0, 255);
+                } else if (SfNet_ViewCount(gCamCount) == 3) {
+                    Graphics_FillRectangle(&gMasterDisp, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, right, SCREEN_HEIGHT,
+                                           0, 0, 0, 255);
+                }
+                if (left < 0) { // a wide screen: the strips beside the 4:3 area
+                    Graphics_FillRectangle(&gMasterDisp, left, 0, -1, SCREEN_HEIGHT, 0, 0, 0, 255);
+                    Graphics_FillRectangle(&gMasterDisp, SCREEN_WIDTH, 0, right, SCREEN_HEIGHT, 0, 0, 0, 255);
+                }
+            }
             gPlayerNum = 1; // what drawing views 0, 3, 2, 1 leaves behind on every machine
         } else if (gCamCount == 2) {
             Game_InitViewport(&gMasterDisp, gCamCount, 1);
@@ -584,8 +636,8 @@ void Game_Update(void) {
                     HUD_DrawBossHealth();
                 }
             }
-        } else if (SfNet_FullView(gCamCount)) {
-            i = SfNet_LocalPlayer();
+        } else if (SfNet_FullView(gCamCount) && (SfNet_ViewCount(gCamCount) == 1)) {
+            i = SfNet_ViewPilot(0);
             if (gPlayer[i].dmgEffectTimer != 0) {
                 Graphics_FillRectangle(&gMasterDisp, OTRGetRectDimensionFromLeftEdge(0), 0,
                                        OTRGetRectDimensionFromRightEdge(SCREEN_WIDTH - 1), SCREEN_HEIGHT - 1,
@@ -596,6 +648,21 @@ void Game_Update(void) {
                                        OTRGetRectDimensionFromRightEdge(SCREEN_WIDTH - 1), SCREEN_HEIGHT - 1,
                                        gPlayerGlareReds[i], gPlayerGlareGreens[i], gPlayerGlareBlues[i],
                                        gPlayerGlareAlphas[i]);
+            }
+        } else if (SfNet_FullView(gCamCount)) {
+            // 2-4 local pilots: each view gets its own pilot's damage flash / glare
+            for (s32 v = 0; v < SfNet_ViewCount(gCamCount); v++) {
+                f32 x, y, w, h;
+                i = SfNet_ViewPilot(v);
+                SfNet_ViewRect(v, &x, &y, &w, &h);
+                if (gPlayer[i].dmgEffectTimer != 0) {
+                    Graphics_FillRectangle(&gMasterDisp, x, y, x + w - 1, y + h - 1, gFillScreenRed,
+                                           gFillScreenGreen, gFillScreenBlue, gFillScreenAlpha);
+                    partialFill = true;
+                } else {
+                    Graphics_FillRectangle(&gMasterDisp, x, y, x + w - 1, y + h - 1, gPlayerGlareReds[i],
+                                           gPlayerGlareGreens[i], gPlayerGlareBlues[i], gPlayerGlareAlphas[i]);
+                }
             }
         } else {
             for (i = 0; i < gCamCount; i++) {

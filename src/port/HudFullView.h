@@ -4,7 +4,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-/* the Versus HUD drawn in [start, end) for `player`'s quarter, zoomed to the full screen (see HudFullView.c) */
+/* the Versus HUD drawn in [start, end) for `player`'s quarter, moved into its view on this device (HudFullView.c) */
 void HudFullView_Transform(Gfx* start, Gfx* end, int player);
 #ifdef __cplusplus
 }
