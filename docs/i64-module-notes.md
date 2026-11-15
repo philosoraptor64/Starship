@@ -53,3 +53,15 @@ State at Starship `9652654e` (branch `netplay`), LUS fork `starship-netplay` `d1
 - The remaining ~1.2 MB per run is unattributed.
 - `n64_game_set_paused` uses SfNet away; there's no in-game pause menu on resume (pause_ready returns 1 at once).
 - Moving to the newer shared LUS (MK's fork) is a large separate job.
+
+## Open: radar marks with 2+ local views on a wide screen (2026-11-15)
+Seen since the per-device views (3ccb9f7b) and still after the 2-view wide layout (39b94b5b): with
+`SF64_TEST_VIEWS=0,1` in a 1040x480 window the radar *frame* is drawn (HudFullView maps it), the marks
+are not (they land left of the view). 4:3 windows and one full-screen view on a wide window are fine.
+Experiments (fox_hud.c HUD_RadarMarks_Update, scaling the marks group in x before its translate):
+- 0.6 brings them in at the view's left edge; 0.444 centres them in the frame at 16:9 (854x480);
+- at 2.17:1 no x scale centres them (0.254 / 0.184 both leave them at the frame's left edge): there is a
+  fixed offset as well, not just a scale. Suspect the left view's negative viewport x being clamped by
+  LUS (AdjustVIewportOrScissor) so 3D in that view is shifted against the 2D HUD; the scene hides it.
+Next step: log the viewport LUS applies for view 0 vs the rect from SfNet_ViewRect, or draw the marks as
+2D rects positioned from the radar frame instead of 3D.
