@@ -2,6 +2,11 @@ cmake_minimum_required(VERSION 3.16.0 FATAL_ERROR)
 
 # Set the project version and language
 project(Starship VERSION 2.0.0 LANGUAGES C CXX ASM)
+
+# Shared builds must not carry this Mac's home folder (its user name) in compiled source paths
+if (NOT MSVC AND DEFINED ENV{HOME})
+    add_compile_options("-ffile-prefix-map=$ENV{HOME}=~")
+endif()
 include(FetchContent)
 
 set(NATO_PHONETIC_ALPHABET
