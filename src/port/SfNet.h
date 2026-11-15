@@ -65,11 +65,18 @@ typedef struct SfNetExternal {
     int num_players;              /* 2-4 player slots in the session */
     unsigned local_mask;          /* the players this machine controls (bit p) */
     int pad_of_player[4];         /* this machine's controller index for each local player */
+    int machine_of_player[4];     /* which machine plays each player (0 = the session's host) */
+    int dropout_menu;             /* the host app asks the session's host what to do when a player leaves */
 } SfNetExternal;
 enum { SFNET_PEER_AWAY = 1, SFNET_PEER_BACK = 2, SFNET_PEER_LEFT = 3 }; /* = n64_net_event */
 unsigned SfNet_SessionBlob(void* out, unsigned cap);
 int SfNet_InitExternal(const SfNetExternal* x);
 void SfNet_ExternalEvent(int event);
+/* the same with the machine it concerns (-1 = unknown) */
+void SfNet_ExternalEventFrom(int event, int machine);
+/* drop-outs, on the session's host: action 2 = remove the pilot from the match, 3 = it stays idle
+ * (n64_dropout_action); 0 = done, else not possible */
+int SfNet_Dropout(int player, int action);
 /* inside a host app: why this side ends the match (a desync, the friend gone); "" = keep going */
 const char* SfNet_EndReason(void);
 

@@ -75,7 +75,7 @@ const n64_game_info kInfo = {
     4,  /* Versus: 4 pilots, any split over up to 4 devices */
     60,
     0,
-    0,  /* drop-outs: "end the game" only for now (Remove via Battle Royal's elimination is planned) */
+    N64_DROPOUT_CAN_REMOVE | N64_DROPOUT_CAN_IDLE,   /* Versus has no CPU pilots: out of the match, or idle */
     4,
 };
 
@@ -105,6 +105,7 @@ KEEP void* sRenderer = nullptr; /* SDL renderer on the host's window, reused acr
 KEEP void* sRendererWindow = nullptr;
 KEEP bool sOnline = false;
 KEEP bool sPeerLeft = false;
+KEEP bool sPeerLeftKnown = false;
 KEEP const n64_host* sNetHost = nullptr;
 
 int HostSend(const void* data, unsigned size) {
@@ -119,12 +120,15 @@ void PollEvents(void) {
     if (sHost == nullptr || sHost->net_poll_event == nullptr) {
         return;
     }
-    for (int e; (e = sHost->net_poll_event()) != 0;) {
+    uint32_t machine = 0;
+    const bool from = sHost->abi_version >= 2 && sHost->net_poll_event_from != nullptr;
+    for (int e; (e = from ? sHost->net_poll_event_from(&machine) : sHost->net_poll_event()) != 0;) {
         if (sOnline) {
-            SfNet_ExternalEvent(e);
+            SfNet_ExternalEventFrom(e, from ? (int) machine : -1);
         }
         if (e == N64_NET_PEER_LEFT) {
             sPeerLeft = true;
+            sPeerLeftKnown = from;   /* with the machine: in the game SfNet decides (drop-outs) */
         }
     }
 }
@@ -144,6 +148,11 @@ int sPlayer = 0;
 int sNumPlayers = 0;          /* i64's player table (0 = two players, one per machine) */
 unsigned sLocalMask = 0;
 int sPadOf[4] = { 0, 0, 0, 0 };
+int sMachineOf[4] = { 0, 1, 2, 3 };
+int sDropoutMenu = 0;
+#ifndef N64_LAUNCH_DROPOUT_MENU
+#define N64_LAUNCH_DROPOUT_MENU (1u << 1)   /* proposed: i64 shows the host a drop-out menu */
+#endif
 unsigned long long sSeed = 0;
 uint32_t sRun = 0;
 std::vector<uint8_t> sBlob;
@@ -165,6 +174,8 @@ bool BeginGame(void) {
         x.num_players = sNumPlayers;
         x.local_mask = sLocalMask;
         for (int p = 0; p < 4; p++) x.pad_of_player[p] = sPadOf[p];
+        for (int p = 0; p < 4; p++) x.machine_of_player[p] = sMachineOf[p];
+        x.dropout_menu = sDropoutMenu;
         if (sHost->log != nullptr) {
             sHost->log("sf64: online as player %d (session data %zu bytes)", sPlayer + 1, sBlob.size());
         }
@@ -424,6 +435,7 @@ extern "C" N64_GAME_EXPORT int n64_game_start(const n64_host* host, const n64_la
     }
     sOnline = online;
     sPeerLeft = false;
+    sPeerLeftKnown = false;
     sNetHost = online ? host : nullptr;
     sPlayer = (int) launch->local_machine == 0 ? 0 : 1;   /* SfNet: 0 = the session's host */
     sNumPlayers = 0;
@@ -431,11 +443,13 @@ extern "C" N64_GAME_EXPORT int n64_game_start(const n64_host* host, const n64_la
     if (online) {
         sNumPlayers = (int) launch->player_count;
         for (uint32_t p = 0; p < launch->player_count && p < 4; p++) {
+            sMachineOf[p] = launch->players[p].machine;
             if (launch->players[p].local) {
                 sLocalMask |= 1u << p;
                 sPadOf[p] = launch->players[p].pad;
             }
         }
+        sDropoutMenu = (launch->flags & N64_LAUNCH_DROPOUT_MENU) != 0;
     }
     sSeed = launch->seed;
     sRun = launch->run;
@@ -502,8 +516,8 @@ extern "C" N64_GAME_EXPORT n64_frame_result n64_game_frame(void) {
         gLusFrameCaptureRequest = 1;
     }
     PollEvents();
-    if (sOnline && sPeerLeft) {
-        return N64_GAME_FRAME_EXIT; /* the other player left: back to i64 */
+    if (sOnline && sPeerLeft && (sPhase != kPhaseGame || !sPeerLeftKnown)) {
+        return N64_GAME_FRAME_EXIT; /* a player left before the game ran (or i64 can't say who): back to i64 */
     }
     if (sPhase == kPhaseExchange) {
         return ExchangeFrame() ? N64_GAME_FRAME_CONTINUE : N64_GAME_FRAME_EXIT;
@@ -540,6 +554,14 @@ extern uint8_t gPauseEnabled;
 extern int gPortInjectStart; /* sys_joybus.c: one Start press at the next input update */
 }
 static bool sWaitPauseMenu = false;
+
+/* drop-outs (the session's host): the pilot leaves the match, or stays idle */
+extern "C" N64_GAME_EXPORT int n64_game_dropout(uint32_t player, n64_dropout_action action, const uint32_t* selection,
+                                                uint32_t selection_count) {
+    (void) selection;
+    (void) selection_count;
+    return SfNet_Dropout((int) player, (int) action);
+}
 
 extern "C" N64_GAME_EXPORT void n64_game_set_paused(int paused) {
     if (!sRunning) {

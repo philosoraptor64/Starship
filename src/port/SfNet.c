@@ -58,6 +58,11 @@ static int sPeerLeft = 0;
 static int sPeerAway = 0; /* i64 says the other player's app is in the background */
 static volatile int sMismatch = 0;
 static int sLastTick = -1;
+static int IsLocalPlayer(int p);
+static void MachineLeft(int m);
+/* with exactly two machines in the session: the one that isn't this one, else -1 */
+static int OtherMachine(void);
+static unsigned sLeftMachines;
 static OSContPad sTickPads[4];
 /* who plays: players 0..sNumPlayers-1, sLocalMask = this machine's, sPadOf[p] = its controller for local p */
 static int sNumPlayers = 2;
@@ -278,7 +283,11 @@ static int Poll(void) {
                 if (sActive && !sPeerLeft) {
                     NetLog("the other player quit");
                 }
-                sPeerLeft = 1;
+                if (sExtSend && OtherMachine() >= 0) {
+                    MachineLeft(OtherMachine());   /* two machines: it's the other one (drop-outs) */
+                } else if (!sExtSend || !sLeftMachines) {
+                    sPeerLeft = 1;
+                }
             } else if (sIsHost && buf[4] == SFNET_HELLO) {
                 if (!sExtSend) {
                     sPeer = from;
@@ -308,14 +317,143 @@ static int Poll(void) {
 
 /* ------------------------------------------------------------------ connect */
 
+/* ---- drop-outs -------------------------------------------------------------------------------
+ * A machine leaving doesn't end the match when someone can decide: the session's host (i64's menu ->
+ * SfNet_Dropout; until then SF64_TEST_DROPOUT=remove|idle) retires each of its pilots through n64net at
+ * an agreed tick on every machine. REMOVE: the pilot leaves the match (out, like a pilot shot down in
+ * Battle Royal, and marked inactive like an empty slot); IDLE: nothing pressed. The host leaving, or no
+ * one to decide, ends the match as before. */
+enum { SFNET_ACT_REMOVE = 2, SFNET_ACT_IDLE = 3 };
+static int sMachineOf[4] = { 0, 1, 2, 3 };
+static unsigned long long sLeftAtUs = 0;
+static int sDropoutMenu = 0;
+#define SFNET_DROPOUT_WAIT_US (120ull * 1000000ull)
+
+static int RetirePilot(int p, int action) {
+    unsigned char act[2] = { (unsigned char) action, 0 };
+    u32 apply = 0;
+    if (!sNet || !n64net_input_retire(sNet, p, act, sizeof(act), &apply)) {
+        return 1;
+    }
+    NetLog("pilot %d left: %s from tick %u", p + 1, action == SFNET_ACT_REMOVE ? "removed from the match" : "idle",
+           (unsigned) apply);
+    return 0;
+}
+
+static void MachineLeft(int m) {
+    const char* t;
+    int p;
+    if (m < 0 || m > 3 || (sLeftMachines & (1u << m))) {
+        return;
+    }
+    sLeftMachines |= 1u << m;
+    if (!sLeftAtUs) {
+        sLeftAtUs = NowUsecs();
+    }
+    NetLog("machine %d left", m + 1);
+    if (m == 0 && !sIsHost) {
+        sPeerLeft = 1; /* the host left: the match ends */
+        return;
+    }
+    if (!sIsHost) {
+        return; /* the host decides */
+    }
+    t = EnvStr("SF64_TEST_DROPOUT");
+    if (!t) {
+        if (!sDropoutMenu) {
+            sPeerLeft = 1; /* no one to decide: the match ends */
+        }
+        return;
+    }
+    for (p = 0; p < sNumPlayers; p++) {
+        if (sMachineOf[p] == m) {
+            RetirePilot(p, strncmp(t, "remove", 6) == 0 ? SFNET_ACT_REMOVE : SFNET_ACT_IDLE);
+        }
+    }
+}
+
+static int OtherMachine(void) {
+    int p, other = -1, me = -1;
+    for (p = 0; p < sNumPlayers; p++) {
+        if (IsLocalPlayer(p)) {
+            me = sMachineOf[p];
+        }
+    }
+    for (p = 0; p < sNumPlayers; p++) {
+        if (sMachineOf[p] == me) {
+            continue;
+        }
+        if (other >= 0 && sMachineOf[p] != other) {
+            return -1; /* more than two machines */
+        }
+        other = sMachineOf[p];
+    }
+    return other;
+}
+
+int SfNet_Dropout(int player, int action) {
+    if (!sActive || !sIsHost || player < 0 || player >= sNumPlayers) {
+        return 1;
+    }
+    if (action != SFNET_ACT_REMOVE && action != SFNET_ACT_IDLE) {
+        return 1;
+    }
+    return RetirePilot(player, action);
+}
+
+/* every tick (also in a resimulation): pilots removed from the match stay out */
+static void ApplyDropouts(int tick) {
+    int p;
+    if (!sNet) {
+        return;
+    }
+    for (p = 0; p < sNumPlayers; p++) {
+        u32 last, apply, size = 2;
+        unsigned char act[2] = { 0, 0 };
+        if (!n64net_input_retired(sNet, p, &last, &apply, act, &size) || (u32) tick < apply ||
+            act[0] != SFNET_ACT_REMOVE) {
+            continue;
+        }
+        if (gVersusMode && gGameState == GSTATE_PLAY) {
+            gPlayerInactive[p] = true;
+            if (gPlayer[p].state != PLAYERSTATE_VS_STANDBY) {
+                gPlayer[p].state = PLAYERSTATE_VS_STANDBY;
+            }
+        }
+    }
+}
+
 static int PeerGone(void) {
     if (sPeerLeft) {
         return 1;
     }
+    if (sLeftMachines) {
+        /* someone left: everyone's fine once the host decided (nothing to wait for); else wait for it */
+        if (n64net_input_remote_players(sNet) == 0 || n64net_input_ready(sNet, (u32) sLastTick + 1)) {
+            return 0;
+        }
+        return NowUsecs() - sLeftAtUs > SFNET_DROPOUT_WAIT_US;
+    }
     if (n64net_input_peer_away(sNet) || sPeerAway) {
         return 0; /* its app is in the background: wait as long as it takes */
     }
-    return n64net_input_peer_silence_usecs(sNet) > (unsigned long long) sDropSecs * 1000000ull;
+    if (n64net_input_peer_silence_usecs(sNet) > (unsigned long long) sDropSecs * 1000000ull) {
+        /* silent too long: on the host, the machines whose pilots we wait for have left */
+        if (sIsHost && sExtSend) {
+            int p;
+            for (p = 0; p < sNumPlayers; p++) {
+                n64net_pad n;
+                if (!IsLocalPlayer(p) && n64net_input_get(sNet, p, (u32) sLastTick + 1, &n)) {
+                    MachineLeft(sMachineOf[p]);
+                }
+            }
+            if (sLeftMachines && !sPeerLeft) {
+                return PeerGone();
+            }
+        }
+        return 1;
+    }
+    return 0;
 }
 
 static void GoOffline(void) {
@@ -666,12 +804,16 @@ int SfNet_InitExternal(const SfNetExternal* x) {
     sIsHost = x->localplayer == 0;
     sSeed = x->seed;
     sLocalMask = 0;
+    sLeftMachines = 0;
+    sLeftAtUs = 0;
+    sDropoutMenu = x->dropout_menu;
     if (x->num_players >= 2 && x->num_players <= 4 && x->local_mask != 0) {
         int p;
         sNumPlayers = x->num_players;
         sLocalMask = x->local_mask & ((1u << sNumPlayers) - 1);
         for (p = 0; p < 4; p++) {
             sPadOf[p] = x->pad_of_player[p];
+            sMachineOf[p] = x->machine_of_player[p];
         }
     }
     sWanted = 1;
@@ -686,6 +828,14 @@ int SfNet_InitExternal(const SfNetExternal* x) {
     Activate();
     NetLog("running on the host app's connection");
     return 0;
+}
+
+void SfNet_ExternalEventFrom(int event, int machine) {
+    if (event == SFNET_PEER_LEFT && machine >= 0) {
+        MachineLeft(machine);
+        return;
+    }
+    SfNet_ExternalEvent(event);
 }
 
 void SfNet_ExternalEvent(int event) {
@@ -802,6 +952,7 @@ void SfNet_FilterPads(OSContPad* pads, int tick) {
     if (!sActive) {
         return;
     }
+    ApplyDropouts(tick);
     if (gRollbackResim && sOffline) {
         memcpy(sTickPads, sUsedPads[tick % SFNET_PAD_RING], sizeof(sTickPads));
     } else if (gRollbackResim) {
