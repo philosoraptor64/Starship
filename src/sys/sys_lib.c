@@ -82,12 +82,15 @@ void Lib_QuickSort(u8* first, u32 length, u32 size, CompareFunc cFunc) {
     }
 }
 
+extern s32 gCamCount;
+float SfNet_ViewAspect(int camCount, float fallback);   /* port/SfNet.c: online Versus views' shape */
+
 void Lib_InitPerspective(Gfx** dList) {
     u16 norm;
 
     FrameInterpolation_RecordOpenChild("perspective", 0);
     FrameInterpolation_RecordMarker(__FILE__, __LINE__);
-    guPerspective(gGfxMtx, &norm, gFovY, (f32) SCREEN_WIDTH / SCREEN_HEIGHT, gProjectNear, gProjectFar, 1.0f);
+    guPerspective(gGfxMtx, &norm, gFovY, SfNet_ViewAspect(gCamCount, (f32) SCREEN_WIDTH / SCREEN_HEIGHT), gProjectNear, gProjectFar, 1.0f);
     gSPPerspNormalize((*dList)++, norm);
     gSPMatrix((*dList)++, gGfxMtx++, G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_PROJECTION);
     guLookAt(gGfxMtx, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, -12800.0f, 0.0f, 1.0f, 0.0f);

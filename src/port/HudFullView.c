@@ -7,7 +7,7 @@
  * top-left, 2 top-right, 3/4 below), but this device shows only its own pilots, each in its view rectangle
  * (SfNet_ViewRect). This rewrites the HUD's 2D rectangles in the display list just emitted: moved from the
  * player's quarter into its view and scaled to it (one pilot: the full screen, positions x2 and texture steps /2;
- * 2-4 pilots: quarter-size views, moved only). 3D-projected HUD parts (radar marks) aren't touched.
+ * two pilots: views as big as the screen allows; 3-4: quarter-size views, moved only). 3D-projected HUD parts (radar marks) aren't touched.
  */
 
 #define QUARTER_W 160 /* SCREEN_WIDTH / 2 */
@@ -18,12 +18,12 @@ static int32_t Sext24(uint32_t v) {
     return (v & 0x800000) ? (int32_t) (v | 0xFF000000) : (int32_t) v;
 }
 
-static int sScale = 2; /* the view's size in quarters: 2 = full screen, 1 = a quarter-size view */
+static float sScaleX = 2, sScaleY = 2; /* the view's size in quarters: 2 = full screen, 1 = a quarter-size view */
 
 static uint32_t HalveSteps(uint32_t w) {
-    /* dsdx (high 16) and dtdy (low 16), s5.10 */
+    /* dsdx (high 16) and dtdy (low 16), s5.10: the texture steps shrink as the rectangle grows */
     int16_t dsdx = (int16_t) (w >> 16), dtdy = (int16_t) (w & 0xFFFF);
-    return ((uint32_t) (uint16_t) (dsdx / sScale) << 16) | (uint16_t) (dtdy / sScale);
+    return ((uint32_t) (uint16_t) (int16_t) (dsdx / sScaleX) << 16) | (uint16_t) (int16_t) (dtdy / sScaleY);
 }
 
 void HudFullView_Transform(Gfx* start, Gfx* end, int player) {
@@ -36,10 +36,10 @@ void HudFullView_Transform(Gfx* start, Gfx* end, int player) {
         return;
     }
     SfNet_ViewRect(view, &fx, &fy, &fw, &fh);
-    sScale = fw >= 2 * QUARTER_W ? 2 : 1;
-    const int32_t vx = (int32_t) fx * 4, vy = (int32_t) fy * 4;
-#define TX(x) (sScale * ((x) - qx) + vx)
-#define TY(y) (sScale * ((y) - qy) + vy)
+    sScaleX = fw / QUARTER_W, sScaleY = fh / QUARTER_H; /* any view size (two views on a wide screen: ~1.6) */
+    const int32_t vx = (int32_t) (fx * 4), vy = (int32_t) (fy * 4);
+#define TX(x) ((int32_t) (sScaleX * ((x) - qx)) + vx)
+#define TY(y) ((int32_t) (sScaleY * ((y) - qy)) + vy)
     for (g = start; g < end; g++) {
         uint32_t op = g->words.w0 >> 24;
         if (op == G_TEXRECT_WIDE && g + 2 < end) {

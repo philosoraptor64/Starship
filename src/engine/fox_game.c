@@ -565,13 +565,19 @@ void Game_Update(void) {
                               SCREEN_WIDTH - SCREEN_MARGIN, SCREEN_HEIGHT - SCREEN_MARGIN);
                 // black around the views: two views leave bands above and below, three leave the last quarter
                 if (SfNet_ViewCount(gCamCount) == 2) {
-                    Graphics_FillRectangle(&gMasterDisp, left, 0, right, 60 - 1, 0, 0, 0, 255);
-                    Graphics_FillRectangle(&gMasterDisp, left, 180, right, SCREEN_HEIGHT, 0, 0, 0, 255);
+                    // two views fill the screen's width (a wide screen's margins too): bands above and below
+                    f32 vx, vy, vw, vh;
+                    SfNet_ViewRect(0, &vx, &vy, &vw, &vh);
+                    if (vy >= 1.0f) {
+                        Graphics_FillRectangle(&gMasterDisp, left, 0, right, (s32) vy - 1, 0, 0, 0, 255);
+                        Graphics_FillRectangle(&gMasterDisp, left, (s32) (vy + vh), right, SCREEN_HEIGHT, 0, 0, 0,
+                                               255);
+                    }
                 } else if (SfNet_ViewCount(gCamCount) == 3) {
                     Graphics_FillRectangle(&gMasterDisp, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, right, SCREEN_HEIGHT,
                                            0, 0, 0, 255);
                 }
-                if (left < 0) { // a wide screen: the strips beside the 4:3 area
+                if ((left < 0) && (SfNet_ViewCount(gCamCount) != 2)) { // a wide screen: the strips beside the 4:3 area
                     Graphics_FillRectangle(&gMasterDisp, left, 0, -1, SCREEN_HEIGHT, 0, 0, 0, 255);
                     Graphics_FillRectangle(&gMasterDisp, SCREEN_WIDTH, 0, right, SCREEN_HEIGHT, 0, 0, 0, 255);
                 }

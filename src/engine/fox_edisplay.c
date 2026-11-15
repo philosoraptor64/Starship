@@ -6,6 +6,7 @@
 #include "prevent_bss_reordering.h"
 #include "global.h"
 #include "sf64object.h"
+#include "port/SfNet.h"
 #include "assets/ast_katina.h"
 #include "assets/ast_venom_1.h"
 #include "assets/ast_venom_2.h"
@@ -1578,12 +1579,17 @@ void Object_ClampSfxSource(f32* sfxSrc) {
 void Object_SetSfxSourceToPos(f32* sfxSrc, Vec3f* pos) {
     Vec3f src;
     Vec3f dest;
+    // @port: online Versus, one pilot on this device: placed from that pilot's camera (SfNet_SfxPilot)
+    s32 sfxPilot = SfNet_SfxPilot(gCamCount);
 
-    if (gCamCount != 1) {
+    if ((gCamCount != 1) && (sfxPilot < 0)) {
         sfxSrc[0] = sfxSrc[1] = sfxSrc[2] = 0.0f;
     } else {
-        Matrix_RotateY(gCalcMatrix, gPlayer[0].camYaw, MTXF_NEW);
-        Matrix_RotateX(gCalcMatrix, gPlayer[0].camPitch, MTXF_APPLY);
+        if (sfxPilot < 0) {
+            sfxPilot = 0;
+        }
+        Matrix_RotateY(gCalcMatrix, gPlayer[sfxPilot].camYaw, MTXF_NEW);
+        Matrix_RotateX(gCalcMatrix, gPlayer[sfxPilot].camPitch, MTXF_APPLY);
         src.x = pos->x - gPlayCamEye.x;
         src.y = pos->y - gPlayCamEye.y;
         src.z = pos->z + gPathProgress - gPlayCamEye.z;
@@ -1600,7 +1606,7 @@ void Object_UpdateSfxSource(f32* sfxSrc) {
     Vec3f dest;
     s32 pad;
 
-    if (gCamCount != 1) {
+    if ((gCamCount != 1) && (SfNet_SfxPilot(gCamCount) < 0)) {
         sfxSrc[0] = sfxSrc[1] = sfxSrc[2] = 0.0f;
     } else {
         Matrix_MultVec3f(&D_edisplay_801615F0, &src, &dest);
@@ -1612,7 +1618,7 @@ void Object_UpdateSfxSource(f32* sfxSrc) {
 }
 
 void Object_SetSfxSourceToView(f32* sfxSrc, Vec3f* viewPos) {
-    if (gCamCount != 1) {
+    if ((gCamCount != 1) && (SfNet_SfxPilot(gCamCount) < 0)) {
         sfxSrc[0] = sfxSrc[1] = sfxSrc[2] = 0.0f;
     } else {
         sfxSrc[0] = viewPos->x;

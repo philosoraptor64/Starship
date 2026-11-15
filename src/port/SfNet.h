@@ -35,6 +35,9 @@ int SfNet_LocalPlayer(void); /* this machine's first player */
 int SfNet_FullView(int camCount);
 int SfNet_ViewCount(int camCount);
 int SfNet_ViewPilot(int view);
+/* online Versus with one local pilot on this device: that pilot (sounds are placed from its camera,
+   as in single player); -1 otherwise (the game's own Versus sound: every source centred) */
+int SfNet_SfxPilot(int camCount);
 int SfNet_ViewOf(int pilot);
 void SfNet_ViewRect(int view, float* x, float* y, float* w, float* h);
 /* right after osContGetReadData (and the replay check): pads 1-2 = the exchanged inputs of logic tick `tick` */

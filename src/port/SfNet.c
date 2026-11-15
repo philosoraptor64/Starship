@@ -1140,15 +1140,41 @@ int SfNet_ViewOf(int pilot) {
     return -1;
 }
 
+float OTRGetDimensionFromLeftEdge(float v);   /* port/Engine.cpp: the screen's edges in N64 coordinates */
+float OTRGetDimensionFromRightEdge(float v);
+
 void SfNet_ViewRect(int view, float* x, float* y, float* w, float* h) {
     const int k = SfNet_ViewCount(4);
     if (k <= 1) { /* one pilot: the whole screen */
         *x = 0, *y = 0, *w = 320, *h = 240;
-    } else if (k == 2) { /* two: the top quarters, side by side, centred vertically */
-        *x = (float) (view * 160), *y = 60, *w = 160, *h = 120;
+    } else if (k == 2) {
+        /* two: side by side across the whole screen (a wide screen's margins too), each 4:3 and as tall as fits
+           (a 4:3 screen: the top quarters, centred vertically) */
+        const float left = OTRGetDimensionFromLeftEdge(0.0f), right = OTRGetDimensionFromRightEdge(320.0f);
+        const float vw = (right - left) / 2;
+        float vh = vw * 3 / 4;
+        if (vh > 240) {
+            vh = 240;
+        }
+        *x = left + view * vw, *y = (240 - vh) / 2, *w = vw, *h = vh;
     } else { /* three or four: the game's own quarters */
         *x = (float) ((view % 2) * 160), *y = (float) ((view / 2) * 120), *w = 160, *h = 120;
     }
+}
+
+/* the projection's aspect for this device's views (all of a layout have one shape): theirs when it isn't 4:3
+   (two views on a very wide screen: capped at the full height); `fallback` otherwise */
+float SfNet_ViewAspect(int camCount, float fallback) {
+    float x, y, w, h;
+    if (SfNet_ViewCount(camCount) <= 1) {
+        return fallback;
+    }
+    SfNet_ViewRect(0, &x, &y, &w, &h);
+    return (h > 0) ? w / h : fallback;
+}
+
+int SfNet_SfxPilot(int camCount) {
+    return SfNet_ViewCount(camCount) == 1 ? SfNet_ViewPilot(0) : -1;
 }
 
 int SfNet_FullView(int camCount) {
