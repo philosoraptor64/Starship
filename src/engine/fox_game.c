@@ -280,16 +280,27 @@ static void Game_InitNetViewport(Gfx** dList, s32 view) {
         return;
     }
     SfNet_ViewRect(view, &x, &y, &w, &h);
-    gViewport->vp.vscale[0] = w * 2;
-    gViewport->vp.vscale[1] = h * 2;
-    gViewport->vp.vscale[2] = G_MAXZ / 2;
-    gViewport->vp.vscale[3] = 0;
-    gViewport->vp.vtrans[0] = (x + w / 2) * 4;
-    gViewport->vp.vtrans[1] = (y + h / 2) * 4;
-    gViewport->vp.vtrans[2] = G_MAXZ / 2;
-    gViewport->vp.vtrans[3] = 0;
-    gDPSetScissor((*dList)++, G_SC_NON_INTERLACE, MAX((s32) x, SCREEN_MARGIN), MAX((s32) y, SCREEN_MARGIN),
-                  MIN((s32) (x + w), SCREEN_WIDTH - SCREEN_MARGIN), MIN((s32) (y + h), SCREEN_HEIGHT - SCREEN_MARGIN));
+    {
+        // The rect is in screen units (240 = the screen's height, the HUD's units, x beyond 0..320 on a wide
+        // screen). LUS stretches a viewport's position over the window width (320 = the full width) while it
+        // squeezes 3D back to the window's shape, so a view off the centre would have its 3D shifted against
+        // its HUD (the radar marks showed it): pull the centre (and the scissor) toward the middle by that squeeze.
+        const f32 halfWide = OTRGetDimensionFromRightEdge(SCREEN_WIDTH) - SCREEN_WIDTH / 2; // half the window, screen units
+        const f32 k = (halfWide > 0.0f) ? (SCREEN_WIDTH / 2) / halfWide : 1.0f;
+        const f32 cx = SCREEN_WIDTH / 2 + (x + w / 2 - SCREEN_WIDTH / 2) * k;
+        const f32 sx0 = SCREEN_WIDTH / 2 + (x - SCREEN_WIDTH / 2) * k, sx1 = SCREEN_WIDTH / 2 + (x + w - SCREEN_WIDTH / 2) * k;
+
+        gViewport->vp.vscale[0] = w * 2;
+        gViewport->vp.vscale[1] = h * 2;
+        gViewport->vp.vscale[2] = G_MAXZ / 2;
+        gViewport->vp.vscale[3] = 0;
+        gViewport->vp.vtrans[0] = cx * 4;
+        gViewport->vp.vtrans[1] = (y + h / 2) * 4;
+        gViewport->vp.vtrans[2] = G_MAXZ / 2;
+        gViewport->vp.vtrans[3] = 0;
+        gDPSetScissor((*dList)++, G_SC_NON_INTERLACE, MAX((s32) sx0, 0), MAX((s32) y, SCREEN_MARGIN),
+                      MIN((s32) sx1, SCREEN_WIDTH), MIN((s32) (y + h), SCREEN_HEIGHT - SCREEN_MARGIN));
+    }
     gSPViewport((*dList)++, gViewport++);
 }
 
@@ -579,7 +590,7 @@ void Game_Update(void) {
                 }
                 if ((left < 0) && (SfNet_ViewCount(gCamCount) != 2)) { // a wide screen: the strips beside the 4:3 area
                     Graphics_FillRectangle(&gMasterDisp, left, 0, -1, SCREEN_HEIGHT, 0, 0, 0, 255);
-                    Graphics_FillRectangle(&gMasterDisp, SCREEN_WIDTH, 0, right, SCREEN_HEIGHT, 0, 0, 0, 255);
+                    Graphics_FillRectangle(&gMasterDisp, SCREEN_WIDTH - 1, 0, right, SCREEN_HEIGHT, 0, 0, 0, 255);
                 }
             }
             gPlayerNum = 1; // what drawing views 0, 3, 2, 1 leaves behind on every machine
