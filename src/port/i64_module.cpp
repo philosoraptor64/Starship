@@ -618,6 +618,11 @@ extern "C" N64_GAME_EXPORT void n64_game_stop(void) {
     GameEngine_SetOnePicturePerHostFrame(false);
     LUS_SetExternalAudio(false);
     Snapshot_SetStorage(nullptr, 0); /* i64 wipes the arena after this */
+    if (getenv("SF64_REENTRY_HEAP") && sHost && sHost->log) {
+        char rep[200];
+        Reentry_HeapReport(rep, sizeof(rep));
+        sHost->log("sf64: %s", rep);
+    }
     Reentry_RestorePristine();
     sRunning = false;
     sHost = nullptr;

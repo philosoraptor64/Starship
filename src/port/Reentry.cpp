@@ -116,6 +116,47 @@ void SaveSection(const char* segment, const char* section) {
 
 } // namespace
 
+#if defined(__APPLE__)
+#include <malloc/malloc.h>
+#include <unordered_map>
+#include <vector>
+/* Heap blocks reachable from the saved globals at the freeze (C++ objects built before the game's first
+ * start: static constructors, LUS singletons). Restoring a global that points at one is only safe while
+ * that block is still the same allocation. Diagnostic (SF64_REENTRY_HEAP=1): count what changed. */
+namespace {
+MK_KEEP std::vector<std::pair<uintptr_t, size_t>>* sHeapBlocks = nullptr;
+void ScanHeap() {
+    /* direct pointers only: the saved globals that point at the start of a default-zone malloc block */
+    sHeapBlocks = new std::vector<std::pair<uintptr_t, size_t>>();
+    sHeapBlocks->reserve(1 << 16);
+    for (int i = 0; i < sPieceCount; i++) {
+        const uint8_t* b = sPieces[i].copy;
+        if (!b) continue;
+        for (size_t o = 0; o + 8 <= sPieces[i].size; o += 8) {
+            uintptr_t v;
+            std::memcpy(&v, b + o, 8);
+            if (v < 0x100000000ull || (v & 15)) continue;
+            if (malloc_zone_from_ptr(reinterpret_cast<void*>(v)) != malloc_default_zone()) continue;
+            const size_t sz = malloc_size(reinterpret_cast<void*>(v));
+            if (sz == 0) continue;
+            if (sHeapBlocks->size() < (1 << 16)) sHeapBlocks->push_back({ v, sz });
+        }
+    }
+}
+}
+extern "C" void Reentry_HeapReport(char* out, unsigned long cap) {
+    size_t same = 0, changed = 0, freed = 0;
+    if (sHeapBlocks) {
+        for (auto& [p, sz] : *sHeapBlocks) {
+            const size_t now = malloc_size(reinterpret_cast<void*>(p));
+            if (now == sz) same++; else if (now == 0) freed++; else changed++;
+        }
+    }
+    snprintf(out, cap, "pre-start heap blocks reachable from globals: %zu, still the same size %zu, freed %zu, resized %zu",
+             sHeapBlocks ? sHeapBlocks->size() : 0, same, freed, changed);
+}
+#endif
+
 extern "C" void Reentry_SavePristine(void) {
     if (sSaved) {
         return;
@@ -127,6 +168,9 @@ extern "C" void Reentry_SavePristine(void) {
     SaveSection("__DATA", "__common");
     SaveSection("__SFSNAP", "__data");
     SaveSection("__SFSNAP", "__bss");
+#if defined(__APPLE__)
+    if (getenv("SF64_REENTRY_HEAP")) ScanHeap();
+#endif
 }
 
 extern "C" void Reentry_RestorePristine(void) {
