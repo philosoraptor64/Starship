@@ -139,10 +139,29 @@ u16 Save_Checksum(Save* arg0) {
     return var_v1;
 }
 
+// @port i64 "everything unlocked" (N64_LAUNCH_UNLOCK_ALL, set by the module for the run; online the host's choice on
+// every machine): every planet cleared with medals on normal and expert, which opens what the game unlocks by play
+// (Expert mode, Versus: Landmaster and on-foot pilots, sound test). The run keeps its own save file (unlocked.sav).
+int gSfUnlockAll = 0;
+static void Save_ApplyUnlockAll(Save* save) {
+    s32 i;
+    if (!gSfUnlockAll) {
+        return;
+    }
+    for (i = 0; i < 16; i++) {
+        save->data.planet[i].normalClear = 1;
+        save->data.planet[i].normalMedal = 1;
+        save->data.planet[i].expertClear = 1;
+        save->data.planet[i].expertMedal = 1;
+    }
+    save->checksum = Save_Checksum(save);
+}
+
 s32 Save_Write(void) {
     OSMesg sp1C;
 
     gSaveFile.save.checksum = Save_Checksum(&gSaveFile.save);
+    Save_ApplyUnlockAll(&gSaveFile.save);
     gSaveFile.backup = gSaveFile.save;
     gSaveIOBuffer = gSaveFile;
     return Save_WriteData();
@@ -162,6 +181,7 @@ s32 Save_Read(void) {
 
     if (gSaveFile.save.checksum == Save_Checksum(&gSaveFile.save)) {
         PRINTF("ＥＥＰＲＯＭ ＲＯＭ［０］ 正常\n");
+        Save_ApplyUnlockAll(&gSaveFile.save);
         return 0;
     }
 #ifdef AVOID_UB
@@ -175,6 +195,7 @@ s32 Save_Read(void) {
 
     if (gSaveFile.save.checksum == Save_Checksum(&gSaveFile.save)) {
         PRINTF("ＥＥＰＲＯＭ ＲＯＭ［1］ 正常\n");
+        Save_ApplyUnlockAll(&gSaveFile.save);
         return 0;
     } else {
         PRINTF("ＥＥＰＲＯＭ ＲＯＭ［０］ ＆ ＲＯＭ［1］ 異常\n");

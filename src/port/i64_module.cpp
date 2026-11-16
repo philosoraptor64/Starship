@@ -65,6 +65,8 @@ const n64_game_rom kRoms[] = {
     { "09f0d105f476b00efa5303a3ebc42e60a7753b7a", "USA 1.1" },
 };
 
+extern "C" int gSfUnlockAll; /* src/engine/fox_save.c */
+
 const n64_game_info kInfo = {
     N64_GAME_ABI_VERSION,
     "sf64-us",
@@ -74,7 +76,7 @@ const n64_game_info kInfo = {
     SFNET_BUILD_ID,
     4,  /* Versus: 4 pilots, any split over up to 4 devices */
     60,
-    0,
+    N64_GAME_INFO_CAN_UNLOCK_ALL,
     N64_DROPOUT_CAN_REMOVE | N64_DROPOUT_CAN_IDLE,   /* Versus has no CPU pilots: out of the match, or idle */
     4,
 };
@@ -427,6 +429,19 @@ extern "C" N64_GAME_EXPORT int n64_game_start(const n64_host* host, const n64_la
     sPreviewFrames = 0;
     gLusFrameCaptureCallback = host->offer_title_art;
     SetDataHome(host);
+    {
+        /* everything unlocked (i64's per-game choice; online the host's, the same flag on every machine): the save
+         * gets every planet cleared with medals as it's read (fox_save.c), in a save file of its own */
+        gSfUnlockAll = (launch->flags & N64_LAUNCH_UNLOCK_ALL) != 0;
+        if (gSfUnlockAll) {
+            setenv("SHIP_SAVE_FILE", "unlocked.sav", 1);
+        } else {
+            unsetenv("SHIP_SAVE_FILE");
+        }
+        if (gSfUnlockAll && host->log != nullptr) {
+            host->log("sf64: everything unlocked (save: unlocked.sav)");
+        }
+    }
     /* netplay settings come from the environment: none from an earlier run */
     static const char* const kNetVars[] = { "SF64_NET", "SF64_NET_HOST", "SF64_NET_PEER", "SF64_NET_BIND",
                                             "SF64_NET_SERVER", "SF64_NET_ROOM", "SF64_NET_PASSWORD" };
