@@ -1052,11 +1052,15 @@ void SfNet_EndTick(int tick, unsigned long long hash) {
     }
 }
 
+extern int gSfUnlockAll; /* src/engine/fox_save.c */
+
 int SfNet_SaveRead(void* saveFile) {
-    if (!sActive || sIsHost || !sHaveHostSave) {
+    /* the guest plays on the host's save; with everything unlocked the host does too (the session blob was made
+     * from its normal save before the run, while the run's own file is unlocked.sav: both sides read the same bytes) */
+    if (!sActive || !sHaveHostSave || (sIsHost && !gSfUnlockAll)) {
         return 0;
     }
-    memcpy(saveFile, &sHostSave, sizeof(SaveFile)); /* the guest plays on the host's save */
+    memcpy(saveFile, &sHostSave, sizeof(SaveFile));
     return 1;
 }
 
