@@ -28,7 +28,13 @@ void Rollback_Step(void) {
 }
 
 int Rollback_Safe(void) {
-    return gVersusMode && (gGameState == GSTATE_PLAY) && (gNextGameState == GSTATE_NONE);
+    /* Versus gameplay, and since 2026-11-18 the title screen and the menus too (no menu stutter on lag spikes;
+     * SyncTest everywhere through title, menus and Versus: 0 mismatches over the whole snapshot). Not the 1P
+     * route map or 1P play (observe mode, later); never across a pending state change. */
+    if (gNextGameState != GSTATE_NONE) {
+        return 0;
+    }
+    return (gVersusMode && gGameState == GSTATE_PLAY) || gGameState == GSTATE_TITLE || gGameState == GSTATE_MENU;
 }
 
 static void Init(void) {

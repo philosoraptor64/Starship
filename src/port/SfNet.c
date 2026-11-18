@@ -83,7 +83,8 @@ static int sHaveHostSave = 0;
 static int (*sExtSend)(const void* data, unsigned size) = NULL;
 static int (*sExtRecv)(void* buf, unsigned cap) = NULL;
 
-/* rollback (SF64_NET_ROLLBACK, default on where snapshots work; inside Versus gameplay only, lockstep elsewhere) */
+/* rollback (SF64_NET_ROLLBACK, default on where snapshots work; in the title/menus and Versus gameplay, lockstep
+ * elsewhere: Rollback_Safe) */
 #define SFNET_SLOTS 16
 #define SFNET_HASH_RING 64
 static int sRollback = 0;
@@ -517,7 +518,7 @@ static void Activate(void) {
         Snapshot_Init(SFNET_SLOTS);
     }
     NetLog("connected as player %d (%s, input delay %u, build %s, seed %llu)", sIsHost ? 1 : 2,
-           sRollback ? "rollback in Versus" : "lockstep",
+           sRollback ? "rollback in menus and Versus" : "lockstep",
            n64net_input_get_delay(sNet), SFNET_BUILD_ID, sSeed);
 }
 
