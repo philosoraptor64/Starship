@@ -558,7 +558,17 @@ void GameEngine::RunCommands(Gfx* Commands, const std::vector<std::unordered_map
     }
 }
 
+extern "C" int Port_IsHidden(void);   // Game.cpp: i64 out of view (n64_game_set_hidden)
+
 void GameEngine::ProcessGfxCommands(Gfx* commands) {
+    if (Port_IsHidden()) {
+        // out of view: no GPU work. The host frames of this logic tick still pass without logic, drawing nothing
+        sPendingCommands = nullptr;
+        sPendingPictures.clear();
+        sPendingNext = 0;
+        sHostFramesLeft = sOnePicturePerHostFrame ? std::max<int>((int) gVIsPerFrame, 1) - 1 : 0;
+        return;
+    }
     auto wnd = std::dynamic_pointer_cast<Fast::Fast3dWindow>(Ship::Context::GetInstance()->GetWindow());
 
     if (wnd == nullptr) {

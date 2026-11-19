@@ -53,6 +53,8 @@ void LUS_SetExternalWindow(void* sdlWindow, void** rendererCache);
 void LUS_SetExternalPacing(bool hostPaced);
 void GameEngine_SetOnePicturePerHostFrame(bool on);   // Engine.cpp
 int GameEngine_HostFrameWithoutLogic(void);
+extern "C" void Port_SetHidden(int hidden);   // Game.cpp
+extern "C" int Port_IsHidden(void);
 void LUS_SetExternalAudio(bool external);
 /* Game audio goes to the host (Engine.cpp) */
 extern void (*gPortHostAudioWrite)(const int16_t* stereo, uint32_t frames, uint32_t rate);
@@ -543,7 +545,7 @@ extern "C" N64_GAME_EXPORT n64_frame_result n64_game_frame(void) {
         return N64_GAME_FRAME_EXIT;
     }
     ++sPreviewFrames;
-    if (PreviewDue(sPreviewFrames) && gLusFrameCaptureCallback) {
+    if (!Port_IsHidden() && PreviewDue(sPreviewFrames) && gLusFrameCaptureCallback) {
         gLusFrameCaptureRequest = 1;
     }
     PollEvents();
@@ -594,6 +596,14 @@ extern "C" N64_GAME_EXPORT int n64_game_dropout(uint32_t player, n64_dropout_act
     return SfNet_Dropout((int) player, (int) action);
 }
 
+/* i64 went out of view (1) or came back (0): keep playing, drawing nothing meanwhile (no GPU work). */
+extern "C" N64_GAME_EXPORT void n64_game_set_hidden(int hidden) {
+    Port_SetHidden(sRunning ? hidden : 0);
+    if (sRunning && sHost && sHost->log) {
+        sHost->log(hidden ? "sf64: out of view, still running (nothing drawn)" : "sf64: back in view");
+    }
+}
+
 extern "C" N64_GAME_EXPORT void n64_game_set_paused(int paused) {
     if (!sRunning) {
         return;
@@ -632,6 +642,7 @@ extern "C" N64_GAME_EXPORT int n64_game_pause_ready(void) {
 extern "C" N64_GAME_EXPORT void n64_game_stop(void) {
     gLusFrameCaptureCallback = nullptr;
     gLusFrameCaptureRequest = 0;
+    Port_SetHidden(0);
     if (!sRunning) {
         return;
     }

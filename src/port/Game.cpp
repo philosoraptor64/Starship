@@ -36,6 +36,15 @@ extern "C" int Port_IsInBackground(void) {
     return sInBackground;
 }
 
+/* i64 out of view (n64_game_set_hidden): the game keeps running, nothing is drawn (no GPU work) */
+static volatile bool sHidden = false;
+extern "C" void Port_SetHidden(int hidden) {
+    sHidden = hidden != 0;
+}
+extern "C" int Port_IsHidden(void) {
+    return sHidden ? 1 : 0;
+}
+
 extern "C"
 void Graphics_PushFrame(Gfx* data) {
     GameEngine::ProcessGfxCommands(data);
