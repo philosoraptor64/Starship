@@ -64,12 +64,14 @@ typedef struct SfNetExternal {
     unsigned blobsize;
     int (*send)(const void* data, unsigned size);
     int (*recv)(void* buf, unsigned cap); /* one datagram: size, 0 if none */
+    int (*send_to)(unsigned machine, const void* data, unsigned size); /* one machine only (a joiner's log) */
     /* i64's player table (ABI v2); num_players 0 = two players, one per machine (localplayer) */
     int num_players;              /* 2-4 player slots in the session */
     unsigned local_mask;          /* the players this machine controls (bit p) */
     int pad_of_player[4];         /* this machine's controller index for each local player */
     int machine_of_player[4];     /* which machine plays each player (0 = the session's host) */
     int dropout_menu;             /* the host app asks the session's host what to do when a player leaves */
+    int joining;                  /* this machine joins the running game (catches up from the host's log) */
 } SfNetExternal;
 enum { SFNET_PEER_AWAY = 1, SFNET_PEER_BACK = 2, SFNET_PEER_LEFT = 3 }; /* = n64_net_event */
 unsigned SfNet_SessionBlob(void* out, unsigned cap);
@@ -77,6 +79,13 @@ int SfNet_InitExternal(const SfNetExternal* x);
 void SfNet_ExternalEvent(int event);
 /* the same with the machine it concerns (-1 = unknown) */
 void SfNet_ExternalEventFrom(int event, int machine);
+/* joining mid-game (i64 n64_game_catching_up / n64_game_catch_up_tick) */
+int SfNet_JoinPending(void);                        /* 1 from the joining start until live (once) */
+int SfNet_CatchUpReady(void);                       /* the next tick's inputs are here */
+void SfNet_CatchUpProgress(unsigned* done, unsigned* total);
+extern int gSfNetCatchUp;                           /* a catch-up tick: no sound */
+/* the session's host: a newcomer takes over `machine`'s pilots (left, idle now). 1 = admitted */
+int SfNet_Admit(int machine);
 /* drop-outs, on the session's host: action 2 = remove the pilot from the match, 3 = it stays idle
  * (n64_dropout_action); 0 = done, else not possible */
 int SfNet_Dropout(int player, int action);

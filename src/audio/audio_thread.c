@@ -1,4 +1,5 @@
 extern int gRollbackResim;
+extern int gSfNetCatchUp; // @port: a mid-game joiner's catch-up tick (SfNet.c)
 #include "sys.h"
 #include "sf64audio_provisional.h"
 #include "audiothread_cmd.h"
@@ -305,7 +306,7 @@ void AudioThread_InitQueues(void) {
 }
 
 void AudioThread_QueueCmd(AudioCmd cmd) {
-    if (gRollbackResim) {
+    if (gRollbackResim || gSfNetCatchUp) {
         return; // @port: rollback resimulation: music/sound commands were already sent
     }
     AudioCmd* audioCmd = &gThreadCmdBuffer[gThreadCmdWritePos & 0xFF];

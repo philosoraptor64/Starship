@@ -58,6 +58,10 @@ static int sPeerLeft = 0;
 static int sPeerAway = 0; /* i64 says the other player's app is in the background */
 static volatile int sMismatch = 0;
 static int sLastTick = -1;
+/* joining mid-game: this machine replays the host's input log, unshown and unheard, until its pilots are live */
+static int sJoining = 0, sCaughtUp = 0, sCatching = 0;
+static unsigned long long sCatchStartUs = 0;
+int gSfNetCatchUp = 0;
 static int IsLocalPlayer(int p);
 static void MachineLeft(int m);
 /* with exactly two machines in the session: the one that isn't this one, else -1 */
@@ -199,6 +203,19 @@ static void SimFlush(void) {
     }
 }
 
+static int (*sExtSendTo)(unsigned machine, const void* data, unsigned size) = NULL;
+static int sMachineOf[4];
+static void NetSend(void* user, const uint8_t* data, uint32_t size);
+
+/* n64net's input log for a machine joining mid-game: to that player's machine only */
+static void NetSendTo(void* user, int player, const uint8_t* data, uint32_t size) {
+    if (sExtSendTo != NULL && player >= 0 && player < 4) {
+        sExtSendTo((unsigned) sMachineOf[player], data, size);
+        return;
+    }
+    NetSend(user, data, size);
+}
+
 static void NetSend(void* user, const uint8_t* data, uint32_t size) {
     SimPacket* p;
     (void) user;
@@ -325,7 +342,7 @@ static int Poll(void) {
  * Battle Royal, and marked inactive like an empty slot); IDLE: nothing pressed. The host leaving, or no
  * one to decide, ends the match as before. */
 enum { SFNET_ACT_REMOVE = 2, SFNET_ACT_IDLE = 3 };
-static int sMachineOf[4] = { 0, 1, 2, 3 };
+static int sMachineOf[4] = { 0, 1, 2, 3 }; /* (declared before NetSendTo) */
 static unsigned long long sLeftAtUs = 0;
 static int sDropoutMenu = 0;
 #define SFNET_DROPOUT_WAIT_US (120ull * 1000000ull)
@@ -390,6 +407,95 @@ static int OtherMachine(void) {
         other = sMachineOf[p];
     }
     return other;
+}
+
+/* A newcomer takes over a departed machine's pilots. Only idle ones: their inputs simply go live again at the
+ * tick n64net announces. A pilot removed from the match is out of the Versus round (inactive, scores skip it),
+ * so taking it over would need the round logic to bring it back: refused (the newcomer plays the next game). */
+int SfNet_Admit(int m) {
+    u32 mask = 0;
+    int p;
+    if (!sActive || !sIsHost || !sNet || m <= 0 || m > 3) {
+        return 0;
+    }
+    for (p = 0; p < sNumPlayers; p++) {
+        u32 last, apply, size = 2;
+        unsigned char act[2] = { 0, 0 };
+        if (sMachineOf[p] != m) {
+            continue;
+        }
+        if (!n64net_input_retired(sNet, p, &last, &apply, act, &size) || act[0] != SFNET_ACT_IDLE) {
+            NetLog("machine %d can't be taken over now (pilot %d isn't idle)", m + 1, p + 1);
+            return 0;
+        }
+        mask |= 1u << p;
+    }
+    if (!mask || !n64net_input_admit(sNet, mask)) {
+        return 0;
+    }
+    sLeftMachines &= ~(1u << m);
+    if (!sLeftMachines) {
+        sLeftAtUs = 0;
+    }
+    NetLog("machine %d joins in the place of pilots %x: sending it the game so far", m + 1, mask);
+    return 1;
+}
+
+int SfNet_JoinPending(void) {
+    uint32_t live = UINT32_MAX;
+    int catching;
+    if (!sJoining || sCaughtUp) {
+        return 0;
+    }
+    if (!sActive || !sNet || sOffline) {
+        return !sOffline;
+    }
+    n64net_input_log_ticks(sNet, &live);
+    catching = n64net_input_catching_up(sNet) || live == UINT32_MAX || (u32) (sLastTick + 1) < live;
+    if (catching && !sCatching) {
+        sCatching = 1;
+        sCatchStartUs = NowUsecs();
+        NetLog("joining the running game: catching up");
+    } else if (!catching) {
+        sCaughtUp = 1;
+        NetLog("caught up at tick %d in %.1f s (live from tick %u)", sLastTick + 1,
+               (double) (NowUsecs() - sCatchStartUs) / 1e6, (unsigned) live);
+    }
+    return catching;
+}
+
+int SfNet_CatchUpReady(void) {
+    if (!sActive || !sNet || sOffline) {
+        return 1;
+    }
+    Poll();
+    {
+        static unsigned long long nextNote = 0;
+        const unsigned long long now = NowUsecs();
+        if (now >= nextNote) {
+            uint32_t live = UINT32_MAX;
+            const uint32_t have = n64net_input_log_ticks(sNet, &live);
+            if (nextNote) {
+                NetLog("catching up: next tick %d, %u ticks of the host's log here, live tick %d, catching %d", sLastTick + 1,
+                       have, live == UINT32_MAX ? -1 : (int) live, n64net_input_catching_up(sNet));
+            }
+            nextNote = now + 2000000;
+        }
+    }
+    if (n64net_input_ready(sNet, (u32) (sLastTick + 1))) {
+        return 1;
+    }
+    n64net_input_resend(sNet); /* (as the lockstep wait does: the host streams its log once it hears from us) */
+    return 0;
+}
+
+void SfNet_CatchUpProgress(unsigned* done, unsigned* total) {
+    uint32_t live = UINT32_MAX;
+    if (sNet) {
+        n64net_input_log_ticks(sNet, &live);
+    }
+    if (done) *done = (unsigned) (sLastTick + 1);
+    if (total) *total = live == UINT32_MAX ? 0 : (unsigned) live;
 }
 
 int SfNet_Dropout(int player, int action) {
@@ -485,7 +591,9 @@ static void CreateNet(void) {
     cfg.input_delay = (s = EnvStr("SF64_NET_DELAY")) ? (u32) atoi(s) : 2;
     cfg.rollback_window = 0; /* lockstep */
     cfg.ticks_per_second = 30;
+    cfg.joining = sJoining;
     cfg.send = NetSend;
+    cfg.send_to = NetSendTo;
     cfg.log = NetLogCb;
     sNet = n64net_input_create(&cfg);
     n64net_input_set_auto_delay(sNet, cfg.input_delay, sRollback ? 3 : 6);
@@ -802,12 +910,16 @@ int SfNet_InitExternal(const SfNetExternal* x) {
     ReadEnvCommon();
     sExtSend = x->send;
     sExtRecv = x->recv;
+    sExtSendTo = x->send_to;
     sIsHost = x->localplayer == 0;
     sSeed = x->seed;
     sLocalMask = 0;
     sLeftMachines = 0;
     sLeftAtUs = 0;
     sDropoutMenu = x->dropout_menu;
+    sJoining = x->joining != 0;
+    sCaughtUp = 0;
+    sCatching = 0;
     if (x->num_players >= 2 && x->num_players <= 4 && x->local_mask != 0) {
         int p;
         sNumPlayers = x->num_players;

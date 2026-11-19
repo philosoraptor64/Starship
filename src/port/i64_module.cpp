@@ -79,7 +79,8 @@ const n64_game_info kInfo = {
     4,  /* Versus: 4 pilots, any split over up to 4 devices */
     60,
     N64_GAME_INFO_CAN_UNLOCK_ALL,
-    N64_DROPOUT_CAN_REMOVE | N64_DROPOUT_CAN_IDLE,   /* Versus has no CPU pilots: out of the match, or idle */
+    N64_DROPOUT_CAN_REMOVE | N64_DROPOUT_CAN_IDLE | N64_DROPOUT_CAN_JOIN,   /* Versus has no CPU pilots: out, or
+                                                    idle (a newcomer may take an idle pilot over) */
     4,
 };
 
@@ -127,6 +128,9 @@ KEEP const n64_host* sNetHost = nullptr;
 int HostSend(const void* data, unsigned size) {
     return sNetHost != nullptr ? sNetHost->net_send(data, size) : -1;
 }
+int HostSendTo(unsigned machine, const void* data, unsigned size) {
+    return sNetHost != nullptr && sNetHost->net_send_to != nullptr ? sNetHost->net_send_to(machine, data, size) : -1;
+}
 int HostRecv(void* buf, unsigned cap) {
     return sNetHost != nullptr ? sNetHost->net_recv(buf, cap) : 0;
 }
@@ -166,6 +170,7 @@ unsigned sLocalMask = 0;
 int sPadOf[4] = { 0, 0, 0, 0 };
 int sMachineOf[4] = { 0, 1, 2, 3 };
 int sDropoutMenu = 0;
+int sJoining = 0;              /* N64_LAUNCH_JOINING: catch up from the host's log, then play */
 #ifndef N64_LAUNCH_DROPOUT_MENU
 #define N64_LAUNCH_DROPOUT_MENU (1u << 1)   /* proposed: i64 shows the host a drop-out menu */
 #endif
@@ -187,11 +192,13 @@ bool BeginGame(void) {
         x.blobsize = (unsigned) sBlob.size();
         x.send = HostSend;
         x.recv = HostRecv;
+        x.send_to = HostSendTo;
         x.num_players = sNumPlayers;
         x.local_mask = sLocalMask;
         for (int p = 0; p < 4; p++) x.pad_of_player[p] = sPadOf[p];
         for (int p = 0; p < 4; p++) x.machine_of_player[p] = sMachineOf[p];
         x.dropout_menu = sDropoutMenu;
+        x.joining = sJoining;
         if (sHost->log != nullptr) {
             sHost->log("sf64: online as player %d (session data %zu bytes)", sPlayer + 1, sBlob.size());
         }
@@ -481,6 +488,7 @@ extern "C" N64_GAME_EXPORT int n64_game_start(const n64_host* host, const n64_la
         }
         sDropoutMenu = (launch->flags & N64_LAUNCH_DROPOUT_MENU) != 0;
     }
+    sJoining = online && (launch->flags & N64_LAUNCH_JOINING) != 0;
     sSeed = launch->seed;
     sRun = launch->run;
     sBlob.clear();
@@ -589,6 +597,46 @@ extern "C" N64_GAME_EXPORT int n64_game_dropout(uint32_t player, n64_dropout_act
     (void) selection;
     (void) selection_count;
     return SfNet_Dropout((int) player, (int) action);
+}
+
+/* joining mid-game (i64 drives the catch-up): one logic tick of the host's log per call, not drawn or heard */
+extern "C" void Main_LogicTick(bool resim);   /* src/sys/sys_main.c */
+extern "C" void Rollback_AfterTick(void);     /* src/port/Rollback.c */
+extern "C" N64_GAME_EXPORT int n64_game_catching_up(uint32_t* done, uint32_t* total) {
+    if (!sRunning || !sOnline || sPhase != kPhaseGame || !SfNet_JoinPending()) {
+        return 0;
+    }
+    unsigned d = 0, t = 0;
+    SfNet_CatchUpProgress(&d, &t);
+    if (done) *done = d;
+    if (total) *total = t;
+    return 1;
+}
+
+extern "C" N64_GAME_EXPORT n64_frame_result n64_game_catch_up_tick(void) {
+    if (!sRunning) {
+        return N64_GAME_FRAME_EXIT;
+    }
+    PollEvents();
+    if (sPeerLeft && !sPeerLeftKnown) {
+        return N64_GAME_FRAME_EXIT;
+    }
+    if (SfNet_EndReason()[0]) {
+        return N64_GAME_FRAME_EXIT;
+    }
+    if (!SfNet_CatchUpReady()) {
+        return N64_GAME_FRAME_WAITING;
+    }
+    gSfNetCatchUp = 1;
+    Main_LogicTick(true);
+    Rollback_AfterTick();
+    gSfNetCatchUp = 0;
+    return N64_GAME_FRAME_CONTINUE;
+}
+
+/* the session's host: a newcomer takes over `machine`'s pilots (idle since it left) */
+extern "C" N64_GAME_EXPORT int n64_game_admit(uint32_t machine) {
+    return SfNet_Admit((int) machine) ? 0 : 1;
 }
 
 /* i64 went out of view (1) or came back (0): keep playing, drawing nothing meanwhile (no GPU work). */
