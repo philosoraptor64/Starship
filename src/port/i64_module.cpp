@@ -581,9 +581,7 @@ extern "C" {
 extern int gGameState;      /* GameState: GSTATE_PLAY = 7 */
 extern int32_t gPlayState;  /* PLAY_UPDATE = 2, PLAY_PAUSE = 100 */
 extern uint8_t gPauseEnabled;
-extern int gPortInjectStart; /* sys_joybus.c: one Start press at the next input update */
 }
-static bool sWaitPauseMenu = false;
 
 /* drop-outs (the session's host): the pilot leaves the match, or stays idle */
 extern "C" N64_GAME_EXPORT int n64_game_dropout(uint32_t player, n64_dropout_action action, const uint32_t* selection,
@@ -607,13 +605,6 @@ extern "C" N64_GAME_EXPORT void n64_game_set_paused(int paused) {
     }
     if (sOnline) {
         SfNet_SetAway(paused == 1 ? 1 : 0);
-        return;
-    }
-    /* offline, back to i64 mid-mission: open the game's pause menu first */
-    sWaitPauseMenu = false;
-    if (paused == 1 && gGameState == 7 && gPlayState == 2 && gPauseEnabled) {
-        gPortInjectStart = 1;
-        sWaitPauseMenu = true;
     }
 }
 
@@ -621,19 +612,13 @@ extern "C" N64_GAME_EXPORT void n64_game_exit_message(char* out, size_t cap) {
     std::snprintf(out, cap, "%s", sOnline ? SfNet_EndReason() : "");
 }
 
-/* offline: ready once the pause menu is open (or the game left play meanwhile) */
+/* Offline, mid-mission: 0 while a Start press would open the game's pause menu (i64 then presses Start itself
+ * and keeps running frames until it is open, gPlayState 100). Online: 1 (the friend's game just waits). */
 extern "C" N64_GAME_EXPORT int n64_game_pause_ready(void) {
-    if (!sRunning || sOnline || !sWaitPauseMenu) {
+    if (!sRunning || sOnline) {
         return 1;
     }
-    if (gPlayState == 100 || gGameState != 7 || gPlayState != 2) {
-        sWaitPauseMenu = false;
-        if (sHost && sHost->log) {
-            sHost->log("sf64: %s", gPlayState == 100 ? "the game's pause menu is open" : "left play before pausing");
-        }
-        return 1;
-    }
-    return 0;
+    return (gGameState == 7 && gPlayState == 2 && gPauseEnabled) ? 0 : 1;
 }
 
 extern "C" N64_GAME_EXPORT void n64_game_stop(void) {
