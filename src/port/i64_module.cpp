@@ -113,13 +113,19 @@ static volatile int sPreviewWanted = 0;
 extern "C" N64_GAME_EXPORT void n64_game_capture_preview(void) { sPreviewWanted = 1; }
 
 /* What the players are doing (i64 logs it; the conformance suite's PvP pass needs MULTI): the versus level being
- * played (gCamCount players, all human), or a mission (one human). */
+ * played (the slots in play: gPlayerInactive), or a mission (one human). */
 extern "C" int32_t gGameState;    /* GameState (sf64context.h): GSTATE_PLAY = 7 */
 extern "C" int32_t gCurrentLevel; /* LevelId: LEVEL_VERSUS = 20 */
-extern "C" int32_t gCamCount;
+extern "C" int32_t gPlayerInactive[4]; /* versus: the slots nobody plays (sys.h) */
 extern "C" N64_GAME_EXPORT int n64_game_phase(uint32_t* humans) {
     const bool play = gGameState == 7;
-    const uint32_t n = !play ? 0 : gCurrentLevel == 20 ? (uint32_t) gCamCount : 1;
+    uint32_t n = !play ? 0 : 1;
+    if (play && gCurrentLevel == 20) { /* the versus level keeps 4 views; count the slots in play */
+        n = 0;
+        for (int i = 0; i < 4; i++) {
+            n += gPlayerInactive[i] == 0;
+        }
+    }
     if (humans) {
         *humans = n;
     }
