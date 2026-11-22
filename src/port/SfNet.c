@@ -358,6 +358,23 @@ static int RetirePilot(int p, int action) {
     return 0;
 }
 
+/* machines in this match (i64's player table; 0 players = the classic two, one per machine) */
+static int MachineCount(void) {
+    unsigned seen = 0;
+    int p, n = 0;
+    if (sNumPlayers <= 0) {
+        return 2;
+    }
+    for (p = 0; p < sNumPlayers; p++) {
+        const int m = sMachineOf[p] & 3;
+        if (!(seen & (1u << m))) {
+            seen |= 1u << m;
+            n++;
+        }
+    }
+    return n;
+}
+
 static void MachineLeft(int m) {
     const char* t;
     int p;
@@ -371,6 +388,10 @@ static void MachineLeft(int m) {
     NetLog("machine %d left", m + 1);
     if (m == 0 && !sIsHost) {
         sPeerLeft = 1; /* the host left: the match ends */
+        return;
+    }
+    if (MachineCount() <= 2) {
+        sPeerLeft = 1; /* two machines: i64 ends the game (it never offers a drop-out choice then) */
         return;
     }
     if (!sIsHost) {
