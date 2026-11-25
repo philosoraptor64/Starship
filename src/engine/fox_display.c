@@ -907,16 +907,18 @@ void Display_PlayerShadow_Draw(Player* player) {
     FrameInterpolation_RecordCloseChild();
 }
 
-// @port: i64 online, each device shows its own pilot's view full screen. The game's versus camera sits close behind the
-// ship for a quarter of a TV; full screen, the pilot's own engine glow (drawn at full strength) is a bright ball in the
-// middle of the picture that's hard to see past (owner, 2026-11-24). The pilot's own glow is drawn at 55% there.
-// Drawing only: nothing here feeds the game's logic.
+// @port: i64 online, each device shows its own pilot's view full screen. The game's versus camera sits much closer
+// behind the ship than the 1-player camera, so the pilot's own engine glow (40 units behind the ship, between the
+// camera and the ship) looks several times bigger next to the ship: a bright ball over the whole Arwing (owner,
+// 2026-11-24/25: it should be bright but contained, as in the 1-player game). The pilot's own glow is drawn smaller
+// there (kOwnGlowScale), at full strength. Drawing only: nothing here feeds the game's logic.
 static s32 sOwnGlowDim = 0;
+static const f32 kOwnGlowScale = 0.25f;
 int SfNet_FullView(int camCount);
 
 void Display_DrawEngineGlow(EngineGlowColor color) {
     RCP_SetupDL(&gMasterDisp, SETUPDL_67);
-    gDPSetPrimColor(gMasterDisp++, 0x00, 0x00, 255, 255, 255, sOwnGlowDim ? 140 : 255);
+    gDPSetPrimColor(gMasterDisp++, 0x00, 0x00, 255, 255, 255, 255);
 
     switch (color) {
         case EG_RED:
@@ -958,8 +960,11 @@ void Display_LandmasterEngineGlow_Draw(Player* player) {
     } else {
         Matrix_Scale(gGfxMatrix, 0.9f * 0.9f, 0.9f * 0.63f, 1.0f, MTXF_APPLY);
     }
-    Matrix_SetGfxMtx(&gMasterDisp);
     sOwnGlowDim = gVersusMode && (player->num == gPlayerNum) && SfNet_FullView(4);
+    if (sOwnGlowDim) {
+        Matrix_Scale(gGfxMatrix, kOwnGlowScale, kOwnGlowScale, kOwnGlowScale, MTXF_APPLY);
+    }
+    Matrix_SetGfxMtx(&gMasterDisp);
     Display_DrawEngineGlow(gLevelType);
     sOwnGlowDim = 0;
     Matrix_Pop(&gGfxMatrix);
