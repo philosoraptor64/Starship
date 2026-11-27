@@ -206,7 +206,11 @@ static int ResyncSpans(n64net_reloc_span* s) {
     FindSections();
     if (!sRelocReady) {
         sRelocReady = n64net_reloc_init(&sReloc, &__dso_handle) ? 1 : -1;
-        /* sMemoryBuffer lies in the image: its pointers go as image offsets */
+        /* sMemoryBuffer lies in the image: its pointers go as image offsets. i64's game memory arena is at one
+         * fixed address on every device: pointers into it mean the same there. */
+        if (sRelocReady > 0) {
+            n64net_reloc_add(&sReloc, (const void*) (uintptr_t) 0x110000000ULL, (size_t) (576ULL << 20));
+        }
     }
     s[0].base = sData.base;
     s[0].used = s[0].cap = sData.size;
