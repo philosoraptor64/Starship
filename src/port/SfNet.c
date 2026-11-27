@@ -92,6 +92,12 @@ static int (*sExtRecv)(void* buf, unsigned cap) = NULL;
 #define SFNET_SLOTS 16
 #define SFNET_HASH_RING 64
 static int sRollback = 0;
+/* resync after a desync (n64net_resync_*, SF64_NET_NO_RESYNC=1: off): the host's state comes over, pointers
+ * translated (Snapshot_Resync*, n64net_reloc.h) */
+static int sResyncOn = 0, sResyncFailed = 0, sResyncLoaded = 0;
+static uint32_t sResyncsDone = 0;
+static void CbResyncSave(void* user, uint8_t* out);
+static void CbResyncLoad(void* user, const uint8_t* in);
 static unsigned sRollbackWindow = 8;
 static int sRollbackFrom = 30; /* ticks of rollback-safe state before the window opens */
 static int sWindowOpen = 0;
@@ -618,6 +624,13 @@ static void CreateNet(void) {
     cfg.log = NetLogCb;
     sNet = n64net_input_create(&cfg);
     n64net_input_set_auto_delay(sNet, cfg.input_delay, sRollback ? 3 : 6);
+    sResyncOn = 0;
+    sResyncFailed = 0;
+    sResyncsDone = 0;
+    if (sNet && !EnvStr("SF64_NET_NO_RESYNC") && Snapshot_ResyncSize()) {
+        sResyncOn = 1;
+        n64net_resync_enable(sNet, sIsHost, (uint32_t) Snapshot_ResyncSize(), CbResyncSave, CbResyncLoad, NULL);
+    }
 }
 
 /* Waits for the host's save (guest) */
@@ -1157,6 +1170,14 @@ void SfNet_EndTick(int tick, unsigned long long hash) {
         if (desyncAt == -2) {
             desyncAt = EnvStr("SF64_NET_TEST_DESYNC") ? atoi(EnvStr("SF64_NET_TEST_DESYNC")) : -1;
         }
+        static int resyncAt = -2;
+        if (resyncAt == -2) { /* test: a resync of states in step (SF64_NET_RELOC_DUMP: compare them) */
+            resyncAt = EnvStr("SF64_NET_TEST_RESYNC") ? atoi(EnvStr("SF64_NET_TEST_RESYNC")) : -1;
+        }
+        if (tick == resyncAt && sIsHost && sResyncOn) {
+            n64net_resync_request(sNet);
+            NetLog("test resync requested at tick %d", tick);
+        }
         if (tick == desyncAt && sIsHost) {   /* (one side only, or both change alike) */
             extern s32 sRandSeed1;
             sRandSeed1 = sRandSeed1 % 29000 + 1 + (sRandSeed1 == 1);
@@ -1169,10 +1190,22 @@ void SfNet_EndTick(int tick, unsigned long long hash) {
     }
     if (!sDesyncReported && n64net_sync_desynced(sNet, &dtick, &dkind)) {
         sDesyncReported = 1;
-        NetLog("DESYNC detected at tick %u", dtick);
-        if (sExtSend && !sEndReason[0]) {
-            snprintf(sEndReason, sizeof(sEndReason),
-                     "The two games got out of step, so the match was stopped. (Both logs have the details.)");
+        NetLog("DESYNC detected at tick %u%s", dtick, sResyncOn ? ": getting back in step (resync)" : "");
+    }
+    {
+        uint32_t done = 0;
+        const int rs = sResyncOn ? n64net_resync_status(sNet, NULL, &done) : (sDesyncReported ? 2 : 0);
+        if (rs == 2 && sDesyncReported && !sResyncFailed) {
+            sResyncFailed = 1;
+            if (sExtSend && !sEndReason[0]) {
+                snprintf(sEndReason, sizeof(sEndReason),
+                         "The two games got out of step, so the match was stopped. (Both logs have the details.)");
+            }
+        }
+        if (done != sResyncsDone) { /* back in step: a later desync is reported (and resynced) again */
+            sResyncsDone = done;
+            sDesyncReported = 0;
+            NetLog("back in step (resync %u)", done);
         }
     }
     if (tick % SFNET_STATS_EVERY == 0 && tick > 0) {
@@ -1419,6 +1452,53 @@ void SfNet_RollbackPoint(void) {
                 n64net_sync_record(sNet, (u32) t, 0, (u32) (h ^ (h >> 32)));
             }
             sLastSyncRecorded = t;
+        }
+    }
+}
+
+static void CbResyncSave(void* user, uint8_t* out) {
+    (void) user;
+    Snapshot_ResyncSave(out);
+}
+
+static void CbResyncLoad(void* user, const uint8_t* in) {
+    (void) user;
+    sResyncLoaded = Snapshot_ResyncLoad(in);
+}
+
+/* After a tick (the state = before tick `tick`): every machine holds at the host's tick while the host's state
+ * comes over (n64net_resync_hold). A rollback that comes in meanwhile is replayed first. */
+void SfNet_ResyncPoint(void) {
+    const int tick = ReplayCheck_GetTick();
+    unsigned long long start = 0;
+    uint32_t tmp;
+    if (!sResyncOn || !sActive || sOffline) {
+        return;
+    }
+    sResyncLoaded = 0;
+    while (n64net_resync_hold(sNet, (uint32_t) tick)) {
+        if (!start) {
+            start = NowUsecs();
+            NetLog("tick %d: holding for the resync", tick);
+        }
+        Poll();
+        n64net_input_resend(sNet);
+        if (sRollback && n64net_peek_rollback(sNet, &tmp)) {
+            SfNet_RollbackPoint();
+            continue;
+        }
+        if (PeerGone()) {
+            GoOffline();
+            return;
+        }
+        usleep(300);
+    }
+    if (start) {
+        sStallUsecs += NowUsecs() - start;
+        NetLog("tick %d: resync hold over after %.2f s%s", tick, (double) (NowUsecs() - start) / 1e6,
+               sResyncLoaded ? " (the host's state is loaded)" : "");
+        if (sResyncLoaded && sRollback) {
+            SfNet_RollbackPoint(); /* saves the loaded state (the driver dropped the old timeline's) */
         }
     }
 }

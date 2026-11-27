@@ -53,6 +53,8 @@ void SfNet_SetAway(int away);
 /* rollback netplay (online Versus): the rollback point after each tick */
 int SfNet_RollbackActive(void);
 void SfNet_RollbackPoint(void);
+/* after every tick online: holds for a resync (getting back in step after a desync) */
+void SfNet_ResyncPoint(void);
 /* once per frame before the tick: 1 = this side is ahead, skip this frame's tick (time sync) */
 int SfNet_TimeSyncSkip(void);
 

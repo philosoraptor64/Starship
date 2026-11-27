@@ -115,7 +115,10 @@ void Rollback_AfterTick(void) {
     Init();
     if (sSyncTest) {
         SyncTestPoint();
-    } else if (SfNet_RollbackActive()) {
-        SfNet_RollbackPoint();
+    } else {
+        if (SfNet_RollbackActive()) {
+            SfNet_RollbackPoint();
+        }
+        SfNet_ResyncPoint();
     }
 }

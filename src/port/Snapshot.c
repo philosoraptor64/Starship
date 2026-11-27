@@ -2,10 +2,12 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 #include "SnapshotSection.h"
 #include "Snapshot.h"
 
 #if SF_SNAPSHOT_SUPPORTED
+#include "n64net_reloc.h"
 #include <mach-o/getsect.h>
 /* this image: the app, or the i64 module dylib (_mh_execute_header is the app only) */
 extern const struct mach_header_64 __dso_handle;
@@ -195,7 +197,73 @@ int Snapshot_Compare(int a, int b, char* report, size_t len) {
     return diffs;
 }
 
+/* ---- resync (another device's state, n64net_reloc.h): the same three ranges, pointers translated ---- */
+
+static n64net_reloc sReloc;
+static int sRelocReady = 0;
+
+static int ResyncSpans(n64net_reloc_span* s) {
+    FindSections();
+    if (!sRelocReady) {
+        sRelocReady = n64net_reloc_init(&sReloc, &__dso_handle) ? 1 : -1;
+        /* sMemoryBuffer lies in the image: its pointers go as image offsets */
+    }
+    s[0].base = sData.base;
+    s[0].used = s[0].cap = sData.size;
+    s[1].base = sBss.base;
+    s[1].used = s[1].cap = sBss.size;
+    s[2].base = sMemoryBuffer;
+    s[2].used = (size_t) ((unsigned char*) sMemoryPtr - (unsigned char*) sMemoryBuffer);
+    s[2].cap = 1000000 * sizeof(int);
+    return sRelocReady > 0 && sData.base && sBss.base ? 3 : 0;
+}
+
+size_t Snapshot_ResyncSize(void) {
+    n64net_reloc_span s[3];
+    return ResyncSpans(s) ? n64net_reloc_state_size(s, 3) : 0;
+}
+
+void Snapshot_ResyncSave(unsigned char* out) {
+    n64net_reloc_span s[3];
+    n64net_reloc_stats st;
+    double t0 = NowMs();
+    if (!ResyncSpans(s)) return;
+    n64net_reloc_scan(&sReloc);
+    n64net_reloc_save(&sReloc, s, 3, out, &st);
+    fprintf(stderr, "Snapshot: resync state %zu KB: %llu words in the game's image, %llu elsewhere in memory, "
+            "%llu escaped, %.1f ms\n", (s[0].used + s[1].used + s[2].used) / 1024,
+            (unsigned long long) st.region_ptrs, (unsigned long long) st.foreign, (unsigned long long) st.escaped,
+            NowMs() - t0);
+    if (getenv("SF64_NET_RELOC_DUMP")) { /* test: <dir>/sf-resync-<pid>.bin, to compare two devices' states */
+        char path[1024];
+        FILE* f;
+        snprintf(path, sizeof(path), "%s/sf-resync-%d.bin", getenv("SF64_NET_RELOC_DUMP"), (int) getpid());
+        if ((f = fopen(path, "wb"))) {
+            fwrite(out, 1, n64net_reloc_state_size(s, 3), f);
+            fclose(f);
+            fprintf(stderr, "Snapshot: resync state written to %s\n", path);
+        }
+    }
+}
+
+int Snapshot_ResyncLoad(const unsigned char* in) {
+    n64net_reloc_span s[3];
+    n64net_reloc_stats st;
+    int ok;
+    if (!ResyncSpans(s)) return 0;
+    n64net_reloc_scan(&sReloc);
+    ok = n64net_reloc_load(&sReloc, s, 3, in, NULL, &st);
+    fprintf(stderr, "Snapshot: resync load %s: %llu words kept, %llu translated, %llu own pointers, %llu matched, "
+            "%llu guessed\n", ok ? "done" : "REFUSED (another build?)", (unsigned long long) st.same,
+            (unsigned long long) st.translated, (unsigned long long) st.own_pointer, (unsigned long long) st.matched,
+            (unsigned long long) st.guessed);
+    return ok;
+}
+
 #else
+size_t Snapshot_ResyncSize(void) { return 0; }
+void Snapshot_ResyncSave(unsigned char* out) { (void) out; }
+int Snapshot_ResyncLoad(const unsigned char* in) { (void) in; return 0; }
 int Snapshot_Supported(void) { return 0; }
 void Snapshot_Init(int slots) { (void) slots; }
 size_t Snapshot_MaxBytes(void) { return 0; }
